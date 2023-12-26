@@ -1,0 +1,48 @@
+[workspace]
+members = [
+    "user-verifier",
+    "gov-portal-mocker",
+    "shared"
+]
+resolver = "2"
+
+[workspace.dependencies]
+# Async
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
+
+# Ethereum
+web3 = "0.19.0"
+ethabi = "18.0.0"
+ethereum-types = "0.14.1"
+jsonrpc-core = "18.0.0"
+
+# Crypto
+k256 = { version = "0.13" }
+ecdsa = { version = "0.16" }
+sha3 = "0"
+
+# Web
+axum = "0"
+tower-http = { version = "0", features = ["cors"] }
+reqwest = { version = "0.11", features = ["rustls-tls", "json", "deflate"] }
+
+# SerDe
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = [ "env-filter", "registry" ] }
+log = "0"
+
+# Misc
+backtrace = "0"
+uuid = "1"
+config = { version = "0", default_features = false, features = ["json"] }
+chrono = { version = "0", default_features = false, features = ["clock", "serde"] }
+assert_matches = "1"
+thiserror = "1"
+hex = "0"
+base64 = "0"
+rand = "0"
+anyhow = "1"

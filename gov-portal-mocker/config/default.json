@@ -1,0 +1,16 @@
+{
+    "listenAddress": "0.0.0.0:8080",
+    "signer": {
+        "url": "http://localhost:10000",
+        "redirectUri": "http://localhost:8080/auth",
+        "fractalClientId": null,
+        "fakeAmbWalletAddress": null
+    },
+    "web": {
+        "pages": {
+            "index.html": "./gov-portal-mocker/static/index.html",
+            "success.html": "./gov-portal-mocker/static/success.html",
+            "pending.html": "./gov-portal-mocker/static/pending.html"
+        }
+    }
+}

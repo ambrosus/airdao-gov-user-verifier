@@ -1,0 +1,7 @@
+**/config/custom.json
+/target
+**/*.rs.bk
+.idea/
+.vscode/
+persisted_state/
+.env
