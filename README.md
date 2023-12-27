@@ -69,3 +69,7 @@ While being inside repo root directory run `cargo run`. Could be run with `RUST_
 ### Gov Portal Mocker
 
 While being inside repo root directory run `cargo run --bin airdao-gov-portal-mocker`. Could be run with `RUST_LOG` env variable to set logging level, e.g. `RUST_LOG=trace cargo run --bin airdao-gov-portal-mocker`.
+
+## Usage
+
+Open web browser and go to default url `http://localhost:8080`, or any other url if overriden in Gov Portal Mocker configuration file.
