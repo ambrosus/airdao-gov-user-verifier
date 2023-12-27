@@ -59,6 +59,7 @@ dependencies = [
 name = "airdao-gov-user-verifier"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "assert_matches",
  "axum",
  "backtrace",

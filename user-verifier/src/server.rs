@@ -52,7 +52,10 @@ async fn verify_endpoint(
 ) -> Result<Json<VerifyAccountResponse>, AppError> {
     tracing::debug!("Request: {req:?}");
 
-    let user = state.client.fetch_user(req.token).await?;
+    let user = state
+        .client
+        .fetch_and_verify_user(req.token, req.account)
+        .await?;
 
     let result = create_verify_account_response(&state.signer, req.account, user, Utc::now());
 

@@ -3,6 +3,8 @@ use serde_json::json;
 
 #[derive(thiserror::Error, Debug)]
 pub enum AppError {
+    #[error("Wallet doesn't match or missed")]
+    WalletMatchFailure,
     #[error("Face verification were rejected")]
     VerificationRejected,
     #[error("Face verification wasn't completed")]
@@ -31,9 +33,9 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_owned(),
             ),
-            Self::VerificationRejected | Self::VerificationNotCompleted => {
-                (StatusCode::UNAUTHORIZED, self.to_string())
-            }
+            Self::VerificationRejected
+            | Self::VerificationNotCompleted
+            | Self::WalletMatchFailure => (StatusCode::UNAUTHORIZED, self.to_string()),
             Self::Generic(e) | Self::TimeoutError(e) => (
                 StatusCode::UNAUTHORIZED,
                 format!("Verification failure: {e}"),

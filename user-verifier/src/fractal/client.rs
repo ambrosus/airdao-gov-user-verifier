@@ -1,3 +1,4 @@
+use ethereum_types::Address;
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -44,7 +45,11 @@ impl FractalClient {
         })
     }
 
-    pub async fn fetch_user(&self, fractal_token: TokenKind) -> Result<VerifiedUser, AppError> {
+    pub async fn fetch_and_verify_user(
+        &self,
+        fractal_token: TokenKind,
+        wallet_address: Address,
+    ) -> Result<VerifiedUser, AppError> {
         let mut oauth_token = match fractal_token {
             TokenKind::AuthorizationCode {
                 auth_code,
@@ -71,12 +76,19 @@ impl FractalClient {
             .map_err(AppError::from);
 
         match fetched_res {
+            Ok(user) if !user.is_wallet_matches(wallet_address) => {
+                Err(AppError::WalletMatchFailure)
+            }
             Ok(mut user) => {
                 tracing::debug!("Fetched raw user: {user:?}");
 
                 Ok(VerifiedUser {
                     status: UserStatus {
-                        uniqueness: user.get_status(&[VerificationLevel::Uniqueness]),
+                        uniqueness: user.get_status(&[
+                            VerificationLevel::Uniqueness,
+                            VerificationLevel::Liveness,
+                            VerificationLevel::WalletEth,
+                        ]),
                         basic: user
                             .get_status(&[VerificationLevel::Basic, VerificationLevel::Liveness]),
                     },

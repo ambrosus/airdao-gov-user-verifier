@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use ethereum_types::Address;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -67,7 +68,7 @@ pub struct VerificationCase {
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum VerificationLevel {
     /// Verification by Face
     Uniqueness,
@@ -79,6 +80,7 @@ pub enum VerificationLevel {
     Sow,
     Telegram,
     Twitter,
+    WalletEth,
 }
 
 #[derive(Deserialize, Debug)]
@@ -112,6 +114,18 @@ pub enum VerificationStatus {
 }
 
 impl UserProfile {
+    pub fn is_wallet_matches(&self, wallet_address: Address) -> bool {
+        self.wallets
+            .iter()
+            .find(
+                |wallet| match shared::utils::parse_evm_like_address(&wallet.address) {
+                    Ok(address) if address == wallet_address => true,
+                    _ => false,
+                },
+            )
+            .is_some()
+    }
+
     pub fn get_status(&mut self, levels: &[VerificationLevel]) -> VerificationStatus {
         // Sort by updated_at timestamp, most recent first
         self.verification_cases

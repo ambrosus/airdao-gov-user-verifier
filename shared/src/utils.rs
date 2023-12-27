@@ -117,6 +117,33 @@ pub fn get_eth_address(uncompressed_public_key: &[u8]) -> H160 {
     )
 }
 
+pub fn parse_evm_like_address(address: &str) -> Result<Address, anyhow::Error> {
+    let bytes = hex::decode(&address[2..])?;
+    let address_bytes = <[u8; 20]>::try_from(bytes.as_slice())?;
+    let address = Address::try_from(&address_bytes)?;
+
+    Ok(address)
+}
+
+pub fn get_checksum_address(address: &Address) -> String {
+    // Keccak256 hash the lowercase hex address
+    let address = address.to_string();
+    let hash = Keccak256::new_with_prefix(&address).finalize();
+
+    // Check each character of the hash and uppercase the corresponding character in the address
+    address
+        .chars()
+        .enumerate()
+        .map(|(i, c)| {
+            if i > 1 && (hash[i / 2] >> (4 * (1 - i % 2))) & 0x0F >= 8 {
+                c.to_uppercase().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect::<String>()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

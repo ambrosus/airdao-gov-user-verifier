@@ -33,7 +33,7 @@ pub struct SignerConfig {
     pub url: String,
     pub redirect_uri: String,
     pub fractal_client_id: String,
-    pub fake_amb_wallet_address: String,
+    pub fake_amb_wallet_address: Address,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -52,13 +52,9 @@ pub struct AppState {
 #[serde(untagged)]
 pub enum AuthQuery {
     Success {
-        #[serde(rename = "state")]
-        caller: Address,
         code: String,
     },
     Retry {
-        #[serde(rename = "state")]
-        caller: Address,
         token: String,
     },
     Failure {
@@ -136,7 +132,9 @@ async fn index_endpoint(State(state): State<AppState>) -> Result<Html<String>, S
                 content
                     .replace(
                         "{{CALLER_ADDRESS}}",
-                        &state.config.signer.fake_amb_wallet_address,
+                        &shared::utils::get_checksum_address(
+                            &state.config.signer.fake_amb_wallet_address,
+                        ),
                     )
                     .replace("{{CLIENT_ID}}", &state.config.signer.fractal_client_id),
             )
@@ -151,20 +149,16 @@ async fn auth_endpoint(
     tracing::debug!("Request {:?}", req);
 
     match req {
-        AuthQuery::Success { caller, code } => state
-            .get_sbt_request_by_auth_code(caller, code)
-            .await
-            .map_err(|e| {
+        AuthQuery::Success { code } => {
+            state.get_sbt_request_by_auth_code(code).await.map_err(|e| {
                 tracing::warn!("Failed to verify Fractal auth code. Error: {e:?}");
-                "Internal Error".to_owned()
-            }),
-        AuthQuery::Retry { caller, token } => state
-            .get_sbt_request_by_token(caller, token)
-            .await
-            .map_err(|e| {
-                tracing::warn!("Failed to retry user verification with Fractal. Error: {e:?}");
-                "Internal Error".to_owned()
-            }),
+                format!("Internal Error: {e}")
+            })
+        }
+        AuthQuery::Retry { token } => state.get_sbt_request_by_token(token).await.map_err(|e| {
+            tracing::warn!("Failed to retry user verification with Fractal. Error: {e:?}");
+            format!("Internal Error: {e}")
+        }),
         AuthQuery::Failure {
             error,
             error_description,
@@ -172,7 +166,9 @@ async fn auth_endpoint(
             tracing::warn!(
                 "Fractal verification failure. Error: {error} (description: {error_description})"
             );
-            Err("Internal Error".to_owned())
+            Err(format!(
+                "Internal Error: {error} (description: {error_description})"
+            ))
         }
     }
 }
@@ -180,14 +176,13 @@ async fn auth_endpoint(
 impl AppState {
     async fn get_sbt_request_by_auth_code(
         &self,
-        caller: Address,
         auth_code: String,
     ) -> Result<Html<String>, anyhow::Error> {
         let response = self
             .client
             .post(format!("{}/verify", self.config.signer.url))
             .json(&json!({
-                "account": caller,
+                "account": self.config.signer.fake_amb_wallet_address,
                 "auth_code": auth_code,
                 "redirect_uri": self.config.signer.redirect_uri,
             }))
@@ -199,16 +194,12 @@ impl AppState {
         self.generate_html_response(response)
     }
 
-    async fn get_sbt_request_by_token(
-        &self,
-        caller: Address,
-        token: String,
-    ) -> Result<Html<String>, anyhow::Error> {
+    async fn get_sbt_request_by_token(&self, token: String) -> Result<Html<String>, anyhow::Error> {
         let response = self
             .client
             .post(format!("{}/verify", self.config.signer.url))
             .json(&json!({
-                "account": caller,
+                "account": self.config.signer.fake_amb_wallet_address,
                 "token": token,
                 "redirect_uri": self.config.signer.redirect_uri,
             }))
@@ -256,7 +247,9 @@ impl AppState {
                         )
                         .replace(
                             "{{CALLER_ADDRESS}}",
-                            &self.config.signer.fake_amb_wallet_address,
+                            &shared::utils::get_checksum_address(
+                                &self.config.signer.fake_amb_wallet_address,
+                            ),
                         ),
                 ))
             }
