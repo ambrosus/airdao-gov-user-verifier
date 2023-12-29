@@ -1,0 +1,38 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AirDAO Gov Portal Mocker</title>
+    <script src="https://c0f4f41c-2f55-4863-921b-sdk-docs.github.io/cdn/metamask-sdk.js"></script>
+    <script>
+        const MMSDK = new MetaMaskSDK.MetaMaskSDK({
+            dappMetadata: {
+                name: "AirDAO Gov Portal Mocker",
+                url: window.location.href,
+            }
+            // Other options
+        })
+
+        // Because init process of the MetaMaskSDK is async.
+        setTimeout(() => {
+            window
+                .ethereum
+                .request({
+                    method: 'eth_requestAccounts',
+                    params: [],
+                })
+                .then((accounts) => {
+                    const from = accounts[0];
+                    window.location.replace(`http://localhost:8080/auth${window.location.search || '?'}&wallet=${from}`)
+                })
+                .catch((e) => {
+                    console.log('`eth_requestAccounts` call failure. Error: ', e)
+                });
+        }, 0)
+    </script>
+</head>
+<body>
+</body>
+</html>

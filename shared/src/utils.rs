@@ -3,12 +3,14 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use config::{self, ConfigError};
 use ethabi::{encode, Address, Bytes, ParamType, Token, Uint};
 use ethereum_types::H160;
+use k256::{ecdsa::RecoveryId, elliptic_curve::scalar::ScalarPrimitive, Secp256k1};
 use log::error;
-use serde::de::DeserializeOwned;
+use serde::de::{self, Deserialize, DeserializeOwned};
 use sha3::{Digest, Keccak256};
 use std::{panic, path::PathBuf, thread};
+use tokio::time::Duration;
 
-use crate::common::SBTRequest;
+use crate::common::{SBTRequest, WalletSignedMessage};
 
 pub async fn load_config<T: DeserializeOwned>(root: &str) -> Result<T, ConfigError> {
     let root = PathBuf::from(root);
@@ -56,6 +58,14 @@ pub fn set_heavy_panic() {
 
         std::process::exit(1)
     }));
+}
+
+/// Deserialize seconds into [`tokio::time::Duration`]
+pub fn de_secs_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    u64::deserialize(deserializer).map(Duration::from_secs)
 }
 
 pub fn parse_datetime(ts_bytes: &[u8]) -> Result<DateTime<Utc>, String> {
@@ -117,6 +127,44 @@ pub fn get_eth_address(uncompressed_public_key: &[u8]) -> H160 {
     )
 }
 
+pub fn keccak256_hash_message_with_eth_prefix(message: String) -> [u8; 32] {
+    Keccak256::new_with_prefix(
+        format!(
+            "{}{}{}",
+            "\x19Ethereum Signed Message:\n",
+            message.len(),
+            message
+        )
+        .as_bytes(),
+    )
+    .finalize()
+    .into()
+}
+
+pub fn recover_eth_address(
+    signed_message: WalletSignedMessage,
+) -> Result<ethereum_types::Address, anyhow::Error> {
+    let decoded_message = String::from_utf8(hex::decode(&signed_message.message)?)?;
+    let message_hash = keccak256_hash_message_with_eth_prefix(decoded_message);
+
+    let signature = hex::decode(signed_message.sign)?;
+    let recovery_id = RecoveryId::from_byte((signature[64] as i32 - 27) as u8)
+        .ok_or_else(|| anyhow::Error::msg("Invalid reconvery param"))?;
+
+    let signature = k256::ecdsa::Signature::from_scalars(
+        ScalarPrimitive::<Secp256k1>::from_slice(&signature[0..32])?.to_bytes(),
+        ScalarPrimitive::<Secp256k1>::from_slice(&signature[32..64])?.to_bytes(),
+    )?;
+
+    // Recover and verify public key
+    let recovered_key =
+        k256::ecdsa::VerifyingKey::recover_from_prehash(&message_hash, &signature, recovery_id)?;
+
+    let wallet = get_eth_address(recovered_key.to_encoded_point(false).as_bytes());
+
+    Ok(wallet)
+}
+
 pub fn parse_evm_like_address(address: &str) -> Result<Address, anyhow::Error> {
     let bytes = hex::decode(&address[2..])?;
     let address_bytes = <[u8; 20]>::try_from(bytes.as_slice())?;
@@ -127,7 +175,7 @@ pub fn parse_evm_like_address(address: &str) -> Result<Address, anyhow::Error> {
 
 pub fn get_checksum_address(address: &Address) -> String {
     // Keccak256 hash the lowercase hex address
-    let address = address.to_string();
+    let address = hex::encode(address.as_bytes());
     let hash = Keccak256::new_with_prefix(&address).finalize();
 
     // Check each character of the hash and uppercase the corresponding character in the address
@@ -135,7 +183,7 @@ pub fn get_checksum_address(address: &Address) -> String {
         .chars()
         .enumerate()
         .map(|(i, c)| {
-            if i > 1 && (hash[i / 2] >> (4 * (1 - i % 2))) & 0x0F >= 8 {
+            if (hash[i / 2] >> (4 * (1 - i % 2))) & 0x0F >= 8 {
                 c.to_uppercase().to_string()
             } else {
                 c.to_string()

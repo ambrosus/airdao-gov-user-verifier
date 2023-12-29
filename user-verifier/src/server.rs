@@ -54,10 +54,10 @@ async fn verify_endpoint(
 
     let user = state
         .client
-        .fetch_and_verify_user(req.token, req.account)
+        .fetch_and_verify_user(req.token, req.wallet)
         .await?;
 
-    let result = create_verify_account_response(&state.signer, req.account, user, Utc::now());
+    let result = create_verify_account_response(&state.signer, req.wallet, user, Utc::now());
 
     tracing::debug!("Response: {result:?}");
 

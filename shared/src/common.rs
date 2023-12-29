@@ -10,7 +10,7 @@ static OAUTH_TOKEN_MINIMUM_LIFETIME: i64 = 5;
 
 #[derive(Deserialize, Debug)]
 pub struct VerifyAccountRequest {
-    pub account: ethabi::Address,
+    pub wallet: ethabi::Address,
     #[serde(flatten)]
     pub token: TokenKind,
 }
@@ -49,6 +49,67 @@ pub struct SBTRequest {
     pub user_id: String,
     pub req_expires_at: u64,
     pub sbt_expires_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct User {
+    pub wallet: Address,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SessionToken {
+    pub token: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawSessionToken {
+    #[serde(rename = "wallet")]
+    pub checksum_wallet: String,
+    pub expires_at: u64,
+}
+
+impl RawSessionToken {
+    pub fn verify(&self) -> bool {
+        self.expires_at > Utc::now().timestamp_millis() as u64
+    }
+}
+
+impl SessionToken {
+    pub fn new(token: RawSessionToken, secret: &[u8]) -> Result<Self, anyhow::Error> {
+        jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &token,
+            &jsonwebtoken::EncodingKey::from_secret(secret),
+        )
+        .map_err(anyhow::Error::from)
+        .map(|token| SessionToken { token })
+    }
+
+    pub fn verify(&self, secret: &[u8]) -> Result<String, anyhow::Error> {
+        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::default());
+        validation.set_required_spec_claims(&<[&str; 0]>::default());
+
+        let token_data = jsonwebtoken::decode::<RawSessionToken>(
+            &self.token,
+            &jsonwebtoken::DecodingKey::from_secret(secret),
+            &validation,
+        )?;
+
+        if !token_data.claims.verify() {
+            Err(anyhow::Error::msg("Session token expired"))
+        } else {
+            println!("{:?}", token_data.claims);
+            Ok(token_data.claims.checksum_wallet)
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WalletSignedMessage {
+    #[serde(rename = "msg")]
+    pub message: String,
+    pub sign: String,
 }
 
 impl TryFrom<SignedSBTRequest> for SBTRequest {

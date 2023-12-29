@@ -14,7 +14,8 @@ use tower_http::cors::CorsLayer;
 
 use shared::{
     common::{
-        ApprovedResponse, PendingResponse, SBTRequest, SignedSBTRequest, VerifyAccountResponse,
+        ApprovedResponse, PendingResponse, SBTRequest, SessionToken, SignedSBTRequest, User,
+        VerifyAccountResponse,
     },
     logger, utils,
 };
@@ -25,6 +26,7 @@ pub struct AppConfig {
     pub listen_address: String,
     pub web: WebConfig,
     pub signer: SignerConfig,
+    pub user_db: UserDbConfig,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -33,12 +35,17 @@ pub struct SignerConfig {
     pub url: String,
     pub redirect_uri: String,
     pub fractal_client_id: String,
-    pub fake_amb_wallet_address: Address,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct WebConfig {
     pub pages: HashMap<String, String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UserDbConfig {
+    pub base_url: String,
 }
 
 #[derive(Clone)]
@@ -49,8 +56,15 @@ pub struct AppState {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct AuthQuery {
+    pub wallet: Option<Address>,
+    #[serde(flatten)]
+    pub result: AuthResult,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
-pub enum AuthQuery {
+pub enum AuthResult {
     Success {
         code: String,
     },
@@ -61,6 +75,20 @@ pub enum AuthQuery {
         error: String,
         error_description: String,
     },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum IndexQuery {
+    WithJwtToken { session: String },
+    NoJwtToken {},
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum VerifyWalletQuery {
+    WalletSignedMessage { data: String },
+    NoWallet {},
 }
 
 #[derive(Debug, Serialize)]
@@ -109,8 +137,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState::new(config.clone()).await?;
 
     let app = Router::new()
-        .route("/", get(index_endpoint))
-        .route("/auth", get(auth_endpoint))
+        .route("/", get(index_route))
+        .route("/auth", get(auth_route))
+        .route("/verify-wallet", get(verify_wallet_route))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -123,18 +152,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn index_endpoint(State(state): State<AppState>) -> Result<Html<String>, String> {
+async fn index_route(
+    State(state): State<AppState>,
+    Query(req): Query<IndexQuery>,
+) -> Result<Html<String>, String> {
+    let (page_name, wallet) = match req {
+        IndexQuery::WithJwtToken { session: token } => match state.get_user(&token).await {
+            Ok(User { wallet }) => ("index.html", Some(wallet)),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to get user by session token `{token}`. Error: {}",
+                    e
+                );
+                ("no-wallet.html", None)
+            }
+        },
+        IndexQuery::NoJwtToken {} => ("no-wallet.html", None),
+    };
+
     state
         .pages
-        .get("index.html")
+        .get(page_name)
         .map(|content| {
             Html(
                 content
                     .replace(
                         "{{CALLER_ADDRESS}}",
-                        &shared::utils::get_checksum_address(
-                            &state.config.signer.fake_amb_wallet_address,
-                        ),
+                        &shared::utils::get_checksum_address(&wallet.unwrap_or_default()),
                     )
                     .replace("{{CLIENT_ID}}", &state.config.signer.fractal_client_id),
             )
@@ -142,26 +186,74 @@ async fn index_endpoint(State(state): State<AppState>) -> Result<Html<String>, S
         .ok_or_else(|| "Resource Not Found".to_owned())
 }
 
-async fn auth_endpoint(
+async fn verify_wallet_route(
+    State(state): State<AppState>,
+    Query(req): Query<VerifyWalletQuery>,
+) -> Result<Html<String>, String> {
+    let (page_name, session_token) = match req {
+        VerifyWalletQuery::WalletSignedMessage { data } => {
+            match state.acquire_session_token(data).await {
+                Ok(SessionToken { token }) => ("valid-message.html", Some(token)),
+                Err(e) => {
+                    tracing::warn!("Failed to acquire session token. Error: {}", e);
+                    ("no-wallet.html", None)
+                }
+            }
+        }
+        VerifyWalletQuery::NoWallet {} => ("no-wallet.html", None),
+    };
+
+    state
+        .pages
+        .get(page_name)
+        .map(|content| Html(content.replace("{{SESSION}}", &session_token.unwrap_or_default())))
+        .ok_or_else(|| "Resource Not Found".to_owned())
+}
+
+async fn auth_route(
     State(state): State<AppState>,
     Query(req): Query<AuthQuery>,
 ) -> Result<Html<String>, String> {
     tracing::debug!("Request {:?}", req);
 
     match req {
-        AuthQuery::Success { code } => {
-            state.get_sbt_request_by_auth_code(code).await.map_err(|e| {
+        // If result from Fractal was Success or Pending and if no wallet in query string, response with HTML
+        AuthQuery {
+            wallet: None,
+            result: AuthResult::Success { .. } | AuthResult::Retry { .. },
+        } => state
+            .pages
+            .get("auth-redirect.html")
+            .cloned()
+            .map(Html)
+            .ok_or_else(|| "Resource Not Found".to_owned()),
+        AuthQuery {
+            wallet: Some(wallet),
+            result: AuthResult::Success { code },
+        } => state
+            .get_sbt_request_by_auth_code(wallet, code)
+            .await
+            .map_err(|e| {
                 tracing::warn!("Failed to verify Fractal auth code. Error: {e:?}");
                 format!("Internal Error: {e}")
-            })
-        }
-        AuthQuery::Retry { token } => state.get_sbt_request_by_token(token).await.map_err(|e| {
-            tracing::warn!("Failed to retry user verification with Fractal. Error: {e:?}");
-            format!("Internal Error: {e}")
-        }),
-        AuthQuery::Failure {
-            error,
-            error_description,
+            }),
+        AuthQuery {
+            wallet: Some(wallet),
+            result: AuthResult::Retry { token },
+        } => state
+            .get_sbt_request_by_token(wallet, token)
+            .await
+            .map_err(|e| {
+                tracing::warn!("Failed to retry user verification with Fractal. Error: {e:?}");
+                format!("Internal Error: {e}")
+            }),
+        AuthQuery {
+            wallet: _,
+            result:
+                AuthResult::Failure {
+                    error,
+                    error_description,
+                },
         } => {
             tracing::warn!(
                 "Fractal verification failure. Error: {error} (description: {error_description})"
@@ -174,15 +266,45 @@ async fn auth_endpoint(
 }
 
 impl AppState {
+    async fn acquire_session_token(
+        &self,
+        encoded_msg: String,
+    ) -> Result<SessionToken, anyhow::Error> {
+        let raw_data = self
+            .client
+            .post(&[&self.config.user_db.base_url, "/token"].concat())
+            .json(&json!({"data": &encoded_msg}))
+            .send()
+            .await?
+            .text()
+            .await?;
+
+        serde_json::from_str::<SessionToken>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
+    }
+
+    async fn get_user(&self, token: &str) -> Result<User, anyhow::Error> {
+        let raw_data = self
+            .client
+            .post(&[&self.config.user_db.base_url, "/user"].concat())
+            .json(&json!({"token": token}))
+            .send()
+            .await?
+            .text()
+            .await?;
+
+        serde_json::from_str::<User>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
+    }
+
     async fn get_sbt_request_by_auth_code(
         &self,
+        wallet: Address,
         auth_code: String,
     ) -> Result<Html<String>, anyhow::Error> {
         let response = self
             .client
             .post(format!("{}/verify", self.config.signer.url))
             .json(&json!({
-                "account": self.config.signer.fake_amb_wallet_address,
+                "wallet": wallet,
                 "auth_code": auth_code,
                 "redirect_uri": self.config.signer.redirect_uri,
             }))
@@ -194,12 +316,16 @@ impl AppState {
         self.generate_html_response(response)
     }
 
-    async fn get_sbt_request_by_token(&self, token: String) -> Result<Html<String>, anyhow::Error> {
+    async fn get_sbt_request_by_token(
+        &self,
+        wallet: Address,
+        token: String,
+    ) -> Result<Html<String>, anyhow::Error> {
         let response = self
             .client
             .post(format!("{}/verify", self.config.signer.url))
             .json(&json!({
-                "account": self.config.signer.fake_amb_wallet_address,
+                "wallet": wallet,
                 "token": token,
                 "redirect_uri": self.config.signer.redirect_uri,
             }))
@@ -239,19 +365,10 @@ impl AppState {
                     .get("pending.html")
                     .ok_or_else(|| anyhow::Error::msg("Page content `pending.html` not found!"))?;
 
-                Ok(Html(
-                    page_content
-                        .replace(
-                            "{{TOKEN}}",
-                            &serde_json::to_string(&token)?.replace(r#"""#, ""),
-                        )
-                        .replace(
-                            "{{CALLER_ADDRESS}}",
-                            &shared::utils::get_checksum_address(
-                                &self.config.signer.fake_amb_wallet_address,
-                            ),
-                        ),
-                ))
+                Ok(Html(page_content.replace(
+                    "{{TOKEN}}",
+                    &serde_json::to_string(&token)?.replace(r#"""#, ""),
+                )))
             }
             Err(_) => {
                 let VerificationError { error } = serde_json::from_str(&response)?;

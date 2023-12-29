@@ -1,16 +1,21 @@
 {
     "listenAddress": "0.0.0.0:8080",
+    "userDb": {
+        "baseUrl": "http://localhost:10001"
+    },
     "signer": {
         "url": "http://localhost:10000",
         "redirectUri": "http://localhost:8080/auth",
-        "fractalClientId": null,
-        "fakeAmbWalletAddress": null
+        "fractalClientId": null
     },
     "web": {
         "pages": {
             "index.html": "./gov-portal-mocker/static/index.html",
+            "no-wallet.html": "./gov-portal-mocker/static/no-wallet.html",
             "success.html": "./gov-portal-mocker/static/success.html",
-            "pending.html": "./gov-portal-mocker/static/pending.html"
+            "pending.html": "./gov-portal-mocker/static/pending.html",
+            "valid-message.html": "./gov-portal-mocker/static/valid-message.html",
+            "auth-redirect.html": "./gov-portal-mocker/static/auth-redirect.html"
         }
     }
 }

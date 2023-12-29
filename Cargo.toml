@@ -2,6 +2,7 @@
 members = [
     "user-verifier",
     "gov-portal-mocker",
+    "gov-portal-db",
     "shared"
 ]
 resolver = "2"
@@ -11,7 +12,6 @@ resolver = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
 
 # Ethereum
-web3 = "0.19.0"
 ethabi = "18.0.0"
 ethereum-types = "0.14.1"
 jsonrpc-core = "18.0.0"
@@ -25,6 +25,7 @@ sha3 = "0"
 axum = "0"
 tower-http = { version = "0", features = ["cors"] }
 reqwest = { version = "0.11", features = ["rustls-tls", "json", "deflate"] }
+jsonwebtoken = "9"
 
 # SerDe
 serde = { version = "1.0", features = ["derive"] }
@@ -34,6 +35,9 @@ serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = [ "env-filter", "registry" ] }
 log = "0"
+
+# Persistence
+mongodb = "2"
 
 # Misc
 backtrace = "0"

@@ -1,8 +1,7 @@
 [package]
-name = "airdao-gov-user-verifier"
+name = "airdao-gov-portal-db"
 version = "0.1.0"
 edition = "2021"
-default-run = "airdao-gov-user-verifier"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,7 +15,6 @@ tokio = { workspace = true }
 # Ethereum
 ethabi = { workspace = true }
 ethereum-types = { workspace = true }
-jsonrpc-core = { workspace = true }
 
 # Crypto
 k256 = { workspace = true }
@@ -27,6 +25,7 @@ sha3 = { workspace = true }
 axum = { workspace = true }
 tower-http = { workspace = true }
 reqwest = { workspace = true }
+jsonwebtoken = { workspace = true }
 
 # SerDe
 serde = { workspace = true }
@@ -34,17 +33,18 @@ serde_json = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 log = { workspace = true }
+
+# Persistence
+mongodb = { workspace = true }
 
 # Misc
 backtrace = { workspace = true }
 uuid = { workspace = true }
+config = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 hex = { workspace = true }
 base64 = { workspace = true }
 anyhow = { workspace = true }
-
-[dev-dependencies]
-rand = { workspace = true }
-assert_matches = { workspace = true }

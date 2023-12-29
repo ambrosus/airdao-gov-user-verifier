@@ -5,9 +5,56 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AirDAO Gov Portal Mocker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/web3/4.2.2/web3.min.js"></script>
+    <script>
+        function parseJwt(session) {
+            const base64Url = session.split('.')[1];
+            if (!base64Url) {
+                return null;
+            }
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+
+            return JSON.parse(jsonPayload);
+        }
+
+        function parseJwtAndVerify(session) {
+            const parsed = parseJwt(session);
+            console.log(parsed)
+            if (!parsed || !(new Web3()).utils.checkAddressCheckSum(`0x${parsed.wallet}`) || !Number.isFinite(parsed.expiresAt) || parsed.expiresAt < Date.now()) {
+                return null;
+            } else {
+                return parsed.wallet;
+            }
+        }
+
+        function authorize() {
+            const session = sessionStorage.getItem("airdao-gov-user-session");
+            const wallet = session ? parseJwtAndVerify(session) : null;
+
+            if (!wallet) {
+                sessionStorage.removeItem("airdao-gov-user-session");
+                window.location.replace("/");
+            } else {
+                window.location.replace(`https://app.next.fractal.id/authorize?&ensure_wallet=${wallet}&client_id={{CLIENT_ID}}&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fauth&response_type=code&scope=contact%3Aread%20verification.uniqueness%3Aread%20verification.uniqueness.details%3Aread%20verification.liveness%3Aread%20verification.liveness.details%3Aread%20verification.wallet-eth%3Aread%20verification.wallet-eth.details%3Aread`);
+            }
+        }
+
+        setTimeout(() => {
+            const session = new URLSearchParams(window.location.search).get("session");
+            if (parseJwtAndVerify(session)) {
+                sessionStorage.setItem("airdao-gov-user-session", session);
+            } else {
+                sessionStorage.removeItem("airdao-gov-user-session");
+                window.location.replace("/");
+            }
+        }, 0)
+    </script>
 </head>
 <body>
-    <h1>Authorise with Fractal</h1>
-    <a href="https://app.next.fractal.id/authorize?ensure_wallet={{CALLER_ADDRESS}}&client_id={{CLIENT_ID}}&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fauth&response_type=code&scope=contact%3Aread%20verification.uniqueness%3Aread%20verification.uniqueness.details%3Aread%20verification.liveness%3Aread%20verification.liveness.details%3Aread%20verification.wallet-eth%3Aread%20verification.wallet-eth.details%3Aread">Click here</a>
+    <h1>Authorize with Fractal</h1>
+    <button id="idAuthorize" onclick="authorize()">Authorize with Fractal</button>
 </body>
 </html>

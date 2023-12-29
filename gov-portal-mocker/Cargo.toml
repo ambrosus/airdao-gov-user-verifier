@@ -10,7 +10,7 @@ edition = "2021"
 shared = { path = "../shared/" }
 
 # Async
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["fs"] }
 
 # Ethereum
 ethabi = { workspace = true }
