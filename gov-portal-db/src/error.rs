@@ -29,3 +29,9 @@ impl From<String> for AppError {
         Self::Generic(error_str)
     }
 }
+
+impl AppError {
+    pub fn generic<T: ToString>(msg: T) -> Self {
+        Self::Generic(msg.to_string())
+    }
+}

@@ -15,6 +15,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     logger::init();
     shared::utils::set_heavy_panic();
 
+    // Try load environment variables from `.env` if provided
+    dotenv::dotenv().ok();
+
     let config = shared::utils::load_config::<AppConfig>("./").await?;
 
     tracing::info!(

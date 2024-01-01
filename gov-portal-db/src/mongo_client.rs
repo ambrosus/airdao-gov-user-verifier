@@ -1,9 +1,8 @@
+use std::env::VarError;
+
 use mongodb::{
     bson::Document,
-    options::{
-        ClientOptions, ConnectionString, FindOptions, InsertOneOptions, UpdateModifications,
-        UpdateOptions,
-    },
+    options::{ClientOptions, FindOptions, InsertOneOptions, UpdateModifications, UpdateOptions},
     results::{InsertOneResult, UpdateResult},
     Client, Collection, Cursor,
 };
@@ -15,16 +14,15 @@ pub struct MongoClient {
     pub req_timeout: std::time::Duration,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Clone, Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MongoConfig {
     /// MongoDB connection url, e.g. mongodb+srv://...
-    #[serde(default)]
-    pub url: Option<ConnectionString>,
+    pub url: Option<String>,
     /// MongoDB database name
-    pub db_name: String,
+    pub db: String,
     /// MongoDB user profiles collection name
-    pub collection_name: String,
+    pub collection: String,
     #[serde(default = "default_request_timeout")]
     pub request_timeout: u64,
 }
@@ -34,27 +32,29 @@ fn default_request_timeout() -> u64 {
 }
 
 impl MongoClient {
-    pub async fn init(mut config: MongoConfig) -> anyhow::Result<Self> {
-        if let Ok(conn_str) = std::env::var("MONGO_CONN_URL") {
-            // Parse a connection string into an options struct.
-            config.url = Some(ConnectionString::parse(conn_str)?);
+    pub async fn init(config: &MongoConfig) -> anyhow::Result<Self> {
+        let conn_url_env: Result<String, VarError> = std::env::var("MONGO_CONN_URL");
+        let conn_url = match conn_url_env.as_deref() {
+            Ok(conn_url) => Some(conn_url),
+            Err(VarError::NotPresent) => config.url.as_deref(),
+            Err(VarError::NotUnicode(conn_url)) => {
+                return Err(anyhow::Error::msg(format!(
+                    "Invalid non-unicode connection url provided `{conn_url:?}`"
+                )))
+            }
         }
-
-        let client_options = ClientOptions::parse_connection_string(
-            config
-                .url
-                .ok_or_else(|| anyhow::Error::msg("Mongo connection url is missed"))?,
-        )
-        .await?;
+        .ok_or_else(|| anyhow::Error::msg("Mongo connection url is missed"))?;
 
         // Get a handle to the deployment.
-        let inner = Client::with_options(client_options)?;
+        let inner = ClientOptions::parse(conn_url)
+            .await
+            .and_then(Client::with_options)?;
 
         // Get a handle to a database.
-        let db = inner.database(&config.db_name);
+        let db = inner.database(&config.db);
 
         // Get a handle to a collection in the database.
-        let collection = db.collection::<Document>(&config.collection_name);
+        let collection = db.collection::<Document>(&config.collection);
 
         Ok(Self {
             collection,

@@ -99,7 +99,6 @@ impl SessionToken {
         if !token_data.claims.verify() {
             Err(anyhow::Error::msg("Session token expired"))
         } else {
-            println!("{:?}", token_data.claims);
             Ok(token_data.claims.checksum_wallet)
         }
     }

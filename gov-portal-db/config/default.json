@@ -3,5 +3,11 @@
     "session": {
         "secret": null,
         "duration": 86400
+    },
+    "mongo": {
+        "url": null,
+        "db": "AirDAOGovPortal",
+        "collection": "Users",
+        "requestTimeout": 10000
     }
 }

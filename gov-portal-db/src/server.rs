@@ -3,18 +3,24 @@ use serde::Deserialize;
 use shared::common::{SessionToken, User};
 use tower_http::cors::CorsLayer;
 
-use crate::{config::AppConfig, error::AppError, session_token::SessionManager};
+use crate::{
+    config::AppConfig, error::AppError, mongo_client::MongoClient, session_token::SessionManager,
+};
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: AppConfig,
     pub session_manager: SessionManager,
+    pub mongo_db: MongoClient,
 }
 
 impl AppState {
-    pub fn new(config: AppConfig) -> Result<Self, AppError> {
+    pub async fn new(config: AppConfig) -> Result<Self, AppError> {
         Ok(Self {
             session_manager: SessionManager::new(config.session.clone()),
+            mongo_db: MongoClient::init(&config.mongo)
+                .await
+                .map_err(AppError::generic)?,
             config,
         })
     }
@@ -33,7 +39,7 @@ pub async fn start(config: AppConfig) -> Result<(), AppError> {
         .parse::<std::net::SocketAddr>()
         .expect("Can't parse socket address");
 
-    let state = AppState::new(config.clone())?;
+    let state = AppState::new(config).await?;
 
     let app = Router::new()
         .route("/token", post(token_route))
