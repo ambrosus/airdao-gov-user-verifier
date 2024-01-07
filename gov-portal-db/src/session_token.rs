@@ -24,7 +24,7 @@ impl SessionManager {
 
     pub fn acquire_token(&self, encoded_message: &str) -> Result<SessionToken, anyhow::Error> {
         let decoded = general_purpose::STANDARD
-            .decode(&encoded_message)
+            .decode(encoded_message)
             .map_err(|e| {
                 anyhow::Error::msg(format!(
                     "Failed to deserialize base64 encoded message {e:?}"

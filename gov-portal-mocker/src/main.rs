@@ -461,7 +461,7 @@ impl AppState {
 
                 Ok(Html(page_content.replace(
                     "{{TOKEN}}",
-                    &serde_json::to_string(&token)?.replace(r#"""#, ""),
+                    &serde_json::to_string(&token)?.replace('"', ""),
                 )))
             }
             Err(_) => {

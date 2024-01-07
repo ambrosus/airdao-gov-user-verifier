@@ -61,8 +61,8 @@ impl SbtRequestSigner {
         Ok(SignedSBTRequest {
             data: hex::encode(encoded_req),
             v: recovery_id.to_byte(),
-            r: hex::encode(&r),
-            s: hex::encode(&s),
+            r: hex::encode(r),
+            s: hex::encode(s),
         })
     }
 }

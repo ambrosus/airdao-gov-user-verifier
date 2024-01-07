@@ -117,13 +117,9 @@ impl UserProfile {
     pub fn is_wallet_matches(&self, wallet_address: Address) -> bool {
         self.wallets
             .iter()
-            .find(
-                |wallet| match shared::utils::parse_evm_like_address(&wallet.address) {
-                    Ok(address) if address == wallet_address => true,
-                    _ => false,
-                },
+            .any(
+                |wallet| matches!(shared::utils::parse_evm_like_address(&wallet.address), Ok(address) if address == wallet_address)
             )
-            .is_some()
     }
 
     pub fn get_status(&mut self, levels: &[VerificationLevel]) -> VerificationStatus {

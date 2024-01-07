@@ -20,7 +20,7 @@ pub fn create_verify_account_response(
         VerificationStatus::Approved => {
             let sbt_req = signer.build_signed_sbt_request(wallet, user.user_id.0, datetime)?;
 
-            let msg = general_purpose::STANDARD.encode(&serde_json::to_string(&sbt_req)?);
+            let msg = general_purpose::STANDARD.encode(serde_json::to_string(&sbt_req)?);
 
             Ok(VerifyAccountResponse::Approved(ApprovedResponse { msg }))
         }

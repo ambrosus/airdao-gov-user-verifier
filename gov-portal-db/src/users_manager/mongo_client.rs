@@ -112,8 +112,7 @@ async fn initialize_collection(
         .list_collection_names(None)
         .await?
         .into_iter()
-        .find(|it| it.as_str() == collection_name)
-        .is_none()
+        .any(|it| it.as_str() == collection_name)
     {
         db.create_collection(collection_name, None).await?;
 
