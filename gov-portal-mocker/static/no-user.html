@@ -1,0 +1,24 @@
+<!-- pending.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AirDAO Gov Portal Mocker</title>
+</head>
+<body>
+    <p>
+        <label for="email">Email:</label>
+        <input type="text" id="email" name="email" />
+    </p>
+    <p>
+        <button id="btnRegister" onclick="register()">Register New User</button>
+    </p>
+    <script>
+        function register() {
+            let email = encodeURIComponent(document.getElementById("email").value);
+            window.location.replace(`http://localhost:8080/verify-email?email=${email}&session={{SESSION}}`)
+        }
+    </script>
+</body>
+</html>

@@ -11,11 +11,13 @@
     "web": {
         "pages": {
             "index.html": "./gov-portal-mocker/static/index.html",
-            "no-wallet.html": "./gov-portal-mocker/static/no-wallet.html",
+            "no-session.html": "./gov-portal-mocker/static/no-session.html",
+            "no-user.html": "./gov-portal-mocker/static/no-user.html",
             "success.html": "./gov-portal-mocker/static/success.html",
             "pending.html": "./gov-portal-mocker/static/pending.html",
             "valid-message.html": "./gov-portal-mocker/static/valid-message.html",
-            "auth-redirect.html": "./gov-portal-mocker/static/auth-redirect.html"
+            "auth-redirect.html": "./gov-portal-mocker/static/auth-redirect.html",
+            "confirm-registration.html": "./gov-portal-mocker/static/confirm-registration.html"
         }
     }
 }

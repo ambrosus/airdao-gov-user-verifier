@@ -13,7 +13,7 @@ pub struct SessionManager {
 #[derive(Clone, Debug, Deserialize)]
 pub struct SessionConfig {
     #[serde(deserialize_with = "shared::utils::de_secs_duration")]
-    duration: Duration,
+    lifetime: Duration,
     secret: String,
 }
 
@@ -41,7 +41,7 @@ impl SessionManager {
                 SessionToken::new(
                     RawSessionToken {
                         checksum_wallet: shared::utils::get_checksum_address(&wallet),
-                        expires_at: (Utc::now() + self.config.duration).timestamp_millis() as u64,
+                        expires_at: (Utc::now() + self.config.lifetime).timestamp_millis() as u64,
                     },
                     self.config.secret.as_bytes(),
                 )
@@ -65,7 +65,7 @@ mod tests {
     #[test]
     fn test_acquire_token() {
         let session_manager = SessionManager::new(super::SessionConfig {
-            duration: tokio::time::Duration::from_secs(180),
+            lifetime: tokio::time::Duration::from_secs(180),
             secret: "TestSecretForJWT".to_owned(),
         });
 

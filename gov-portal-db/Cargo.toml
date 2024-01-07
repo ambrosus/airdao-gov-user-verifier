@@ -11,6 +11,7 @@ shared = { path = "../shared/" }
 
 # Async
 tokio = { workspace = true }
+futures-util = { workspace = true }
 
 # Ethereum
 ethabi = { workspace = true }
@@ -30,6 +31,8 @@ jsonwebtoken = { workspace = true }
 # SerDe
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde-email = { workspace = true }
+bson = { workspace = true }
 
 # Logging
 tracing = { workspace = true }

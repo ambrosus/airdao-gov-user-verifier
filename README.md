@@ -50,7 +50,15 @@ Default configuration could be found in `./gov-portal-mocker/config/default.json
 - `listenAddress`: host:port to run the gov portal database middleware at. Defaults to `localhost:10001`
 - `session`: session manager configuration
     - `secret`: secret to generate session tokens. Should be set before app start
-    - `duration`: lifetime duration in seconds for which the session token will be valid to access database by using middleware. Defaults to 1 day
+    - `lifetime`: lifetime duration in seconds for which the session token will be valid to access database by using middleware. Defaults to 1 day
+- `registration`: registration manager configuration
+    - `secret`: secret to generate registration tokens to be sent to user specified email for verification. Should be set before app start
+    - `lifetime`: lifetime duration in seconds for which the registration token will be valid to register user by using middleware. Defaults to 10 min
+- `mongo`: MongoDB configuration
+    - `url`: mongo connection url in format `mongodb://host:port`. Should be set before app start
+    - `db`: database name with users collection. Defaults to `AirDAOGovPortal`
+    - `collection`: collection name with user profiles. Defaults to `Users`
+    - `requestTimeout`: maximum amount of time given to execute MongoDB requests before timeout. Defaults to 10 sec
 
 #### Override configuration
 

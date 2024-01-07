@@ -1,10 +1,13 @@
 mod config;
 mod error;
-mod mongo_client;
 mod server;
 mod session_token;
+mod users_manager;
+
+use std::sync::Arc;
 
 use shared::{logger, utils};
+use users_manager::UsersManager;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -16,7 +19,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = utils::load_config::<config::AppConfig>("./gov-portal-db").await?;
 
-    server::start(config).await?;
+    let users_manager = Arc::new(UsersManager::new(&config).await?);
+
+    server::start(config, users_manager.clone()).await?;
 
     Ok(())
 }

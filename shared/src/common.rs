@@ -51,9 +51,37 @@ pub struct SBTRequest {
     pub sbt_expires_at: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct User {
     pub wallet: Address,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub role: String,
+    #[serde(default)]
+    pub email: serde_email::Email,
+    #[serde(default)]
+    pub telegram: String,
+    #[serde(default)]
+    pub twitter: String,
+    #[serde(default)]
+    pub bio: String,
+}
+
+impl TryFrom<RawUserRegistrationToken> for User {
+    type Error = anyhow::Error;
+
+    fn try_from(token: RawUserRegistrationToken) -> Result<Self, Self::Error> {
+        let wallet = ethereum_types::Address::from(<[u8; 20]>::try_from(
+            hex::decode(token.checksum_wallet)?.as_slice(),
+        )?);
+
+        Ok(Self {
+            wallet,
+            email: token.email,
+            ..Default::default()
+        })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -83,7 +111,7 @@ impl SessionToken {
             &jsonwebtoken::EncodingKey::from_secret(secret),
         )
         .map_err(anyhow::Error::from)
-        .map(|token| SessionToken { token })
+        .map(|token| Self { token })
     }
 
     pub fn verify(&self, secret: &[u8]) -> Result<String, anyhow::Error> {
@@ -210,5 +238,54 @@ impl TokenLifetime {
 impl OAuthToken {
     pub fn requires_refresh(&self) -> bool {
         Utc::now() + Duration::minutes(OAUTH_TOKEN_MINIMUM_LIFETIME) >= self.expires_at
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserRegistrationToken {
+    pub token: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawUserRegistrationToken {
+    #[serde(rename = "wallet")]
+    pub checksum_wallet: String,
+    pub email: serde_email::Email,
+    pub expires_at: u64,
+}
+
+impl RawUserRegistrationToken {
+    pub fn verify(&self) -> bool {
+        self.expires_at > Utc::now().timestamp_millis() as u64
+    }
+}
+
+impl UserRegistrationToken {
+    pub fn new(token: RawUserRegistrationToken, secret: &[u8]) -> Result<Self, anyhow::Error> {
+        jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &token,
+            &jsonwebtoken::EncodingKey::from_secret(secret),
+        )
+        .map_err(anyhow::Error::from)
+        .map(|token| Self { token })
+    }
+
+    pub fn verify(&self, secret: &[u8]) -> Result<RawUserRegistrationToken, anyhow::Error> {
+        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::default());
+        validation.set_required_spec_claims(&<[&str; 0]>::default());
+
+        let token_data = jsonwebtoken::decode::<RawUserRegistrationToken>(
+            &self.token,
+            &jsonwebtoken::DecodingKey::from_secret(secret),
+            &validation,
+        )?;
+
+        if !token_data.claims.verify() {
+            Err(anyhow::Error::msg("Registration token expired"))
+        } else {
+            Ok(token_data.claims)
+        }
     }
 }

@@ -2,7 +2,11 @@
     "listenAddress": "0.0.0.0:10001",
     "session": {
         "secret": null,
-        "duration": 86400
+        "lifetime": 86400
+    },
+    "registration": {
+        "secret": null,
+        "lifetime": 600
     },
     "mongo": {
         "url": null,

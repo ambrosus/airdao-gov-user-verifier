@@ -2,9 +2,12 @@ use std::env::VarError;
 
 use mongodb::{
     bson::Document,
-    options::{ClientOptions, FindOptions, InsertOneOptions, UpdateModifications, UpdateOptions},
+    options::{
+        ClientOptions, FindOptions, IndexOptions, InsertOneOptions, UpdateModifications,
+        UpdateOptions,
+    },
     results::{InsertOneResult, UpdateResult},
-    Client, Collection, Cursor,
+    Client, Collection, Cursor, IndexModel,
 };
 use serde::Deserialize;
 
@@ -50,11 +53,7 @@ impl MongoClient {
             .await
             .and_then(Client::with_options)?;
 
-        // Get a handle to a database.
-        let db = inner.database(&config.db);
-
-        // Get a handle to a collection in the database.
-        let collection = db.collection::<Document>(&config.collection);
+        let collection = initialize_collection(&inner, &config.db, &config.collection).await?;
 
         Ok(Self {
             collection,
@@ -86,4 +85,53 @@ impl MongoClient {
     ) -> Result<UpdateResult, mongodb::error::Error> {
         self.collection.update_one(query, update, options).await
     }
+}
+
+async fn initialize_collection(
+    client: &Client,
+    db_name: &str,
+    collection_name: &str,
+) -> anyhow::Result<Collection<Document>> {
+    // if client
+    //     .list_database_names(None, None)
+    //     .await?
+    //     .into_iter()
+    //     .find(|it| it.as_str() == db_name)
+    //     .is_none()
+    // {
+    //     return Err(anyhow::anyhow!("DB `{db_name}` is not initialized!"));
+    // }
+
+    // Get a handle to a database.
+    let db = client.database(db_name);
+
+    // Get a handle to a collection in the database.
+    let collection = db.collection::<Document>(collection_name);
+
+    if db
+        .list_collection_names(None)
+        .await?
+        .into_iter()
+        .find(|it| it.as_str() == collection_name)
+        .is_none()
+    {
+        db.create_collection(collection_name, None).await?;
+
+        println!(
+            "{:?}",
+            collection
+                .create_index(
+                    IndexModel::builder()
+                        .keys(bson::doc! {
+                            "wallet": 1,
+                        })
+                        .options(Some(IndexOptions::builder().unique(true).build()))
+                        .build(),
+                    None,
+                )
+                .await?
+        );
+    }
+
+    Ok(collection)
 }

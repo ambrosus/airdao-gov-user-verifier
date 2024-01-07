@@ -15,7 +15,7 @@ use tower_http::cors::CorsLayer;
 use shared::{
     common::{
         ApprovedResponse, PendingResponse, SBTRequest, SessionToken, SignedSBTRequest, User,
-        VerifyAccountResponse,
+        UserRegistrationToken, VerifyAccountResponse,
     },
     logger, utils,
 };
@@ -85,6 +85,19 @@ pub enum IndexQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct VerifyEmailQuery {
+    email: serde_email::Email,
+    session: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum RegisterQuery {
+    WithJwtToken { token: String },
+    NoJwtToken {},
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum VerifyWalletQuery {
     WalletSignedMessage { data: String },
@@ -139,6 +152,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/", get(index_route))
         .route("/auth", get(auth_route))
+        .route("/verify-email", get(verify_email_route))
+        .route("/register", get(register_route))
         .route("/verify-wallet", get(verify_wallet_route))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -156,18 +171,18 @@ async fn index_route(
     State(state): State<AppState>,
     Query(req): Query<IndexQuery>,
 ) -> Result<Html<String>, String> {
-    let (page_name, wallet) = match req {
+    let (page_name, session_token) = match req {
         IndexQuery::WithJwtToken { session: token } => match state.get_user(&token).await {
-            Ok(User { wallet }) => ("index.html", Some(wallet)),
+            Ok(User { wallet: _, .. }) => ("index.html", None),
             Err(e) => {
                 tracing::warn!(
                     "Failed to get user by session token `{token}`. Error: {}",
                     e
                 );
-                ("no-wallet.html", None)
+                ("no-user.html", Some(token))
             }
         },
-        IndexQuery::NoJwtToken {} => ("no-wallet.html", None),
+        IndexQuery::NoJwtToken {} => ("no-session.html", None),
     };
 
     state
@@ -176,10 +191,7 @@ async fn index_route(
         .map(|content| {
             Html(
                 content
-                    .replace(
-                        "{{CALLER_ADDRESS}}",
-                        &shared::utils::get_checksum_address(&wallet.unwrap_or_default()),
-                    )
+                    .replace("{{SESSION}}", &session_token.unwrap_or_default())
                     .replace("{{CLIENT_ID}}", &state.config.signer.fractal_client_id),
             )
         })
@@ -265,6 +277,57 @@ async fn auth_route(
     }
 }
 
+async fn verify_email_route(
+    State(state): State<AppState>,
+    Query(req): Query<VerifyEmailQuery>,
+) -> Result<Html<String>, String> {
+    let (page_name, token) = match state.verify_email(&req.email, &req.session).await {
+        Ok(UserRegistrationToken { token, .. }) => ("confirm-registration.html", Some(token)),
+        Err(e) => {
+            tracing::warn!(
+                "Failed to register user ({}) by session token `{}`. Error: {}",
+                req.email,
+                req.session,
+                e
+            );
+            ("no-session.html", None)
+        }
+    };
+
+    state
+        .pages
+        .get(page_name)
+        .map(|content| Html(content.replace("{{REGISTRATION_TOKEN}}", &token.unwrap_or_default())))
+        .ok_or_else(|| "Resource Not Found".to_owned())
+}
+
+async fn register_route(
+    State(state): State<AppState>,
+    Query(req): Query<RegisterQuery>,
+) -> Result<Html<String>, String> {
+    let page_name = match req {
+        RegisterQuery::WithJwtToken { token } => match state.register_user(&token).await {
+            Ok(User { wallet: _, .. }) => "no-session.html", // at this point we don't have session token, so user should connect wallet again
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to register user by registration token `{token}`. Error: {}",
+                    e
+                );
+                "no-session.html"
+            }
+        },
+        RegisterQuery::NoJwtToken {} => "no-session.html",
+    };
+
+    state
+        .pages
+        .get(page_name)
+        .map(|content| {
+            Html(content.replace("{{CLIENT_ID}}", &state.config.signer.fractal_client_id))
+        })
+        .ok_or_else(|| "Resource Not Found".to_owned())
+}
+
 impl AppState {
     async fn acquire_session_token(
         &self,
@@ -280,6 +343,37 @@ impl AppState {
             .await?;
 
         serde_json::from_str::<SessionToken>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
+    }
+
+    async fn verify_email(
+        &self,
+        email: &serde_email::Email,
+        token: &str,
+    ) -> Result<UserRegistrationToken, anyhow::Error> {
+        let raw_data = self
+            .client
+            .post(&[&self.config.user_db.base_url, "/verify-email"].concat())
+            .json(&json!({"token": token, "email": email}))
+            .send()
+            .await?
+            .text()
+            .await?;
+
+        serde_json::from_str::<UserRegistrationToken>(&raw_data)
+            .map_err(|_| anyhow::Error::msg(raw_data))
+    }
+
+    async fn register_user(&self, token: &str) -> Result<User, anyhow::Error> {
+        let raw_data = self
+            .client
+            .post(&[&self.config.user_db.base_url, "/register"].concat())
+            .json(&json!({"token": token}))
+            .send()
+            .await?
+            .text()
+            .await?;
+
+        serde_json::from_str::<User>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
     }
 
     async fn get_user(&self, token: &str) -> Result<User, anyhow::Error> {
