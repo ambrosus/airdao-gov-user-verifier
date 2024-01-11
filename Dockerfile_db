@@ -1,5 +1,7 @@
 FROM debian:bullseye-slim
 
+WORKDIR /
+
 COPY --from=ghcr.io/ambrosus/airdao-gov-user-binary:main /tmp/builder/target/release/airdao-gov-portal-db .
 
 CMD ["./airdao-gov-portal-db"]
