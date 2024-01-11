@@ -1,0 +1,5 @@
+FROM debian:bullseye-slim
+
+COPY --from=ghcr.io/ambrosus/airdao-gov-user-binary:main /tmp/builder/target/release/airdao-gov-user-verifier .
+
+CMD ["./airdao-gov-user-verifier"]
