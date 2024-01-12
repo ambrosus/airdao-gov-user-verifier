@@ -83,7 +83,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          file: Dockerfile_binary
+          file: Dockerfile_db
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -126,7 +126,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          file: Dockerfile_binary
+          file: Dockerfile_verifier
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
