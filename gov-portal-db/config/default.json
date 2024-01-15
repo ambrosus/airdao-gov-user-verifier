@@ -6,7 +6,15 @@
     },
     "registration": {
         "secret": null,
-        "lifetime": 600
+        "lifetime": 600,
+        "userProfileAttributes": {
+            "nameMaxLength": 64,
+            "roleMaxLength": 50,
+            "emailMaxLength": 64,
+            "telegramMaxLength": 32,
+            "twitterMaxLength": 32,
+            "bioMaxLength": 250
+        }
     },
     "mongo": {
         "url": null,

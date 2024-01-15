@@ -12,4 +12,6 @@ pub enum Error {
     BsonDeserialization(#[from] bson::de::Error),
     #[error("Request timeout")]
     Timeout(#[from] tokio::time::error::Elapsed),
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
 }

@@ -17,7 +17,8 @@
             "pending.html": "./gov-portal-mocker/static/pending.html",
             "valid-message.html": "./gov-portal-mocker/static/valid-message.html",
             "auth-redirect.html": "./gov-portal-mocker/static/auth-redirect.html",
-            "confirm-registration.html": "./gov-portal-mocker/static/confirm-registration.html"
+            "confirm-registration.html": "./gov-portal-mocker/static/confirm-registration.html",
+            "error.html": "./gov-portal-mocker/static/error.html"
         }
     }
 }

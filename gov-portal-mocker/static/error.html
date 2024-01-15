@@ -1,0 +1,25 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AirDAO Gov Portal Mocker</title>
+    <script>
+        function goBack() {
+            if ('referrer' in document) {
+                window.location.replace(document.referrer);
+            } else {
+                window.history.back();
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Error</h1>
+    <p>{{ERROR_TEXT}}</p>
+    <p>
+        <button id="idBack" onclick="goBack()">Back</button>
+    </p>
+</body>
+</html>

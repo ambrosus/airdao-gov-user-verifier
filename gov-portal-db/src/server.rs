@@ -1,4 +1,5 @@
 use axum::{extract::State, routing::post, Json, Router};
+use ethereum_types::Address;
 use serde::Deserialize;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
@@ -37,6 +38,25 @@ pub enum TokenQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateUserProfile {}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateUserRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub telegram: Option<String>,
+    #[serde(default)]
+    pub twitter: Option<String>,
+    #[serde(default)]
+    pub bio: Option<String>,
+    #[serde(flatten)]
+    pub session: SessionToken,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct VerifyEmailReguest {
     pub email: serde_email::Email,
     #[serde(flatten)]
@@ -54,6 +74,7 @@ pub async fn start(config: AppConfig, users_manager: Arc<UsersManager>) -> Resul
     let app = Router::new()
         .route("/token", post(token_route))
         .route("/user", post(user_route))
+        .route("/update-user", post(update_user_route))
         .route("/verify-email", post(verify_email_route))
         .route("/register", post(register_route))
         .layer(CorsLayer::permissive())
@@ -106,6 +127,27 @@ async fn user_route(
     res.map(Json)
 }
 
+async fn update_user_route(
+    State(state): State<AppState>,
+    Json(update_req): Json<UpdateUserRequest>,
+) -> Result<Json<()>, String> {
+    tracing::debug!("[/update-user] Request {:?}", update_req);
+
+    let res = match state.session_manager.verify_token(&update_req.session) {
+        Ok(wallet) => state
+            .users_manager
+            .update_user(update_req.into_user(wallet))
+            .await
+            .map_err(|e| format!("Unable to update user profile. Error: {e}")),
+
+        Err(e) => Err(format!("User update request failure. Error: {e}")),
+    };
+
+    tracing::debug!("[/update-user] Response {res:?}");
+
+    res.map(Json)
+}
+
 async fn verify_email_route(
     State(state): State<AppState>,
     Json(req): Json<VerifyEmailReguest>,
@@ -151,4 +193,18 @@ async fn register_route(
     tracing::debug!("[/register] Response {res:?}");
 
     res.map(Json)
+}
+
+impl UpdateUserRequest {
+    fn into_user(self, wallet: Address) -> User {
+        User {
+            wallet,
+            name: self.name,
+            role: self.role,
+            email: None,
+            telegram: self.telegram,
+            twitter: self.twitter,
+            bio: self.bio,
+        }
+    }
 }

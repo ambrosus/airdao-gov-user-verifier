@@ -54,18 +54,18 @@ pub struct SBTRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct User {
     pub wallet: Address,
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub role: String,
-    #[serde(default)]
-    pub email: serde_email::Email,
-    #[serde(default)]
-    pub telegram: String,
-    #[serde(default)]
-    pub twitter: String,
-    #[serde(default)]
-    pub bio: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<serde_email::Email>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telegram: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub twitter: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bio: Option<String>,
 }
 
 impl TryFrom<RawUserRegistrationToken> for User {
@@ -78,7 +78,7 @@ impl TryFrom<RawUserRegistrationToken> for User {
 
         Ok(Self {
             wallet,
-            email: token.email,
+            email: Some(token.email),
             ..Default::default()
         })
     }

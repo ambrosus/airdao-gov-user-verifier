@@ -6,6 +6,7 @@ use axum::{
 };
 use base64::{engine::general_purpose, Engine};
 use ethabi::Address;
+use futures_util::TryFutureExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -85,8 +86,22 @@ pub enum IndexQuery {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum UpdateUserQuery {
+    WithJwtToken {
+        session: String,
+        name: Option<String>,
+        role: Option<String>,
+        telegram: Option<String>,
+        twitter: Option<String>,
+        bio: Option<String>,
+    },
+    NoJwtToken {},
+}
+
+#[derive(Debug, Deserialize)]
 pub struct VerifyEmailQuery {
-    email: serde_email::Email,
+    email: String,
     session: String,
 }
 
@@ -154,6 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/auth", get(auth_route))
         .route("/verify-email", get(verify_email_route))
         .route("/register", get(register_route))
+        .route("/update-user", get(update_user_route))
         .route("/verify-wallet", get(verify_wallet_route))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -171,26 +187,119 @@ async fn index_route(
     State(state): State<AppState>,
     Query(req): Query<IndexQuery>,
 ) -> Result<Html<String>, String> {
-    let (page_name, session_token) = match req {
+    let (page_name, session_token, user) = match req {
         IndexQuery::WithJwtToken { session: token } => match state.get_user(&token).await {
-            Ok(User { wallet: _, .. }) => ("index.html", None),
+            Ok(user) => ("index.html", None, Some(user)),
             Err(e) => {
                 tracing::warn!(
                     "Failed to get user by session token `{token}`. Error: {}",
                     e
                 );
-                ("no-user.html", Some(token))
+                ("no-user.html", Some(token), None)
             }
         },
-        IndexQuery::NoJwtToken {} => ("no-session.html", None),
+        IndexQuery::NoJwtToken {} => ("no-session.html", None, None),
     };
 
     state
         .pages
         .get(page_name)
         .map(|content| {
+            let user = user.unwrap_or_default();
             Html(
                 content
+                    .replace(
+                        "{{USER_WALLET}}",
+                        &utils::get_checksum_address(&user.wallet),
+                    )
+                    .replace("{{USER_NAME}}", user.name.as_deref().unwrap_or_default())
+                    .replace("{{USER_ROLE}}", user.role.as_deref().unwrap_or_default())
+                    .replace(
+                        "{{USER_EMAIL}}",
+                        user.email
+                            .as_ref()
+                            .map(|email| email.as_str())
+                            .unwrap_or_default(),
+                    )
+                    .replace(
+                        "{{USER_TELEGRAM}}",
+                        user.telegram.as_deref().unwrap_or_default(),
+                    )
+                    .replace(
+                        "{{USER_TWITTER}}",
+                        user.twitter.as_deref().unwrap_or_default(),
+                    )
+                    .replace("{{USER_BIO}}", user.bio.as_deref().unwrap_or_default())
+                    .replace("{{SESSION}}", &session_token.unwrap_or_default())
+                    .replace("{{CLIENT_ID}}", &state.config.signer.fractal_client_id),
+            )
+        })
+        .ok_or_else(|| "Resource Not Found".to_owned())
+}
+
+async fn update_user_route(
+    State(state): State<AppState>,
+    Query(req): Query<UpdateUserQuery>,
+) -> Result<Html<String>, String> {
+    let (page_name, session_token, user) = match req {
+        UpdateUserQuery::WithJwtToken {
+            session: token,
+            name,
+            role,
+            telegram,
+            twitter,
+            bio,
+        } => match state
+            .update_user(&token, name, role, telegram, twitter, bio)
+            .and_then(|_| state.get_user(&token))
+            .await
+        {
+            Ok(user) => ("index.html", None, Ok(user)),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to update user profile by session token `{token}`. Error: {}",
+                    e
+                );
+                ("error.html", Some(token), Err(e.to_string()))
+            }
+        },
+        UpdateUserQuery::NoJwtToken {} => ("no-session.html", None, Err("No session".to_owned())),
+    };
+
+    state
+        .pages
+        .get(page_name)
+        .map(|content| {
+            let (user, error_text) = match user {
+                Ok(user) => (user, None),
+                Err(e) => (User::default(), Some(e)),
+            };
+
+            Html(
+                content
+                    .replace("{{ERROR_TEXT}}", &error_text.unwrap_or_default())
+                    .replace(
+                        "{{USER_WALLET}}",
+                        &utils::get_checksum_address(&user.wallet),
+                    )
+                    .replace("{{USER_NAME}}", user.name.as_deref().unwrap_or_default())
+                    .replace("{{USER_ROLE}}", user.role.as_deref().unwrap_or_default())
+                    .replace(
+                        "{{USER_EMAIL}}",
+                        user.email
+                            .as_ref()
+                            .map(|email| email.as_str())
+                            .unwrap_or_default(),
+                    )
+                    .replace(
+                        "{{USER_TELEGRAM}}",
+                        user.telegram.as_deref().unwrap_or_default(),
+                    )
+                    .replace(
+                        "{{USER_TWITTER}}",
+                        user.twitter.as_deref().unwrap_or_default(),
+                    )
+                    .replace("{{USER_BIO}}", user.bio.as_deref().unwrap_or_default())
                     .replace("{{SESSION}}", &session_token.unwrap_or_default())
                     .replace("{{CLIENT_ID}}", &state.config.signer.fractal_client_id),
             )
@@ -205,20 +314,31 @@ async fn verify_wallet_route(
     let (page_name, session_token) = match req {
         VerifyWalletQuery::WalletSignedMessage { data } => {
             match state.acquire_session_token(data).await {
-                Ok(SessionToken { token }) => ("valid-message.html", Some(token)),
-                Err(e) => {
-                    tracing::warn!("Failed to acquire session token. Error: {}", e);
-                    ("no-wallet.html", None)
-                }
+                Ok(SessionToken { token }) => ("valid-message.html", Ok(Some(token))),
+                Err(e) => (
+                    "error.html",
+                    Err(format!("Failed to acquire session token. Error: {e:?}")),
+                ),
             }
         }
-        VerifyWalletQuery::NoWallet {} => ("no-wallet.html", None),
+        VerifyWalletQuery::NoWallet {} => ("no-session.html", Ok(None)),
     };
 
     state
         .pages
         .get(page_name)
-        .map(|content| Html(content.replace("{{SESSION}}", &session_token.unwrap_or_default())))
+        .map(|content| {
+            let (session_token, error_text) = match session_token {
+                Ok(token) => (token, None),
+                Err(e) => (Default::default(), Some(e)),
+            };
+
+            Html(
+                content
+                    .replace("{{ERROR_TEXT}}", &error_text.unwrap_or_default())
+                    .replace("{{SESSION}}", &session_token.unwrap_or_default()),
+            )
+        })
         .ok_or_else(|| "Resource Not Found".to_owned())
 }
 
@@ -281,23 +401,37 @@ async fn verify_email_route(
     State(state): State<AppState>,
     Query(req): Query<VerifyEmailQuery>,
 ) -> Result<Html<String>, String> {
-    let (page_name, token) = match state.verify_email(&req.email, &req.session).await {
-        Ok(UserRegistrationToken { token, .. }) => ("confirm-registration.html", Some(token)),
-        Err(e) => {
-            tracing::warn!(
-                "Failed to register user ({}) by session token `{}`. Error: {}",
-                req.email,
-                req.session,
-                e
-            );
-            ("no-session.html", None)
-        }
+    let registration_token = match serde_json::from_str::<serde_email::Email>(&req.email) {
+        Ok(email) => state.verify_email(&email, &req.session).await,
+        Err(e) => Err(anyhow::anyhow!("Invalid user email: {e}")),
+    };
+
+    let (page_name, token) = match registration_token {
+        Ok(UserRegistrationToken { token, .. }) => ("confirm-registration.html", Ok(token)),
+        Err(e) => (
+            "error.html",
+            Err(format!(
+                "Failed to verify user email ({}) by session token `{}`. Error: {}",
+                req.email, req.session, e
+            )),
+        ),
     };
 
     state
         .pages
         .get(page_name)
-        .map(|content| Html(content.replace("{{REGISTRATION_TOKEN}}", &token.unwrap_or_default())))
+        .map(|content| {
+            let (token, error_text) = match token {
+                Ok(token) => (token, None),
+                Err(e) => (Default::default(), Some(e)),
+            };
+
+            Html(
+                content
+                    .replace("{{ERROR_TEXT}}", &error_text.unwrap_or_default())
+                    .replace("{{REGISTRATION_TOKEN}}", &token),
+            )
+        })
         .ok_or_else(|| "Resource Not Found".to_owned())
 }
 
@@ -387,6 +521,34 @@ impl AppState {
             .await?;
 
         serde_json::from_str::<User>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
+    }
+
+    async fn update_user(
+        &self,
+        token: &str,
+        name: Option<String>,
+        role: Option<String>,
+        telegram: Option<String>,
+        twitter: Option<String>,
+        bio: Option<String>,
+    ) -> Result<(), anyhow::Error> {
+        let raw_data = self
+            .client
+            .post(&[&self.config.user_db.base_url, "/update-user"].concat())
+            .json(&json!({
+                "token": token,
+                "name": name,
+                "role": role,
+                "telegram": telegram,
+                "twitter": twitter,
+                "bio": bio,
+            }))
+            .send()
+            .await?
+            .text()
+            .await?;
+
+        serde_json::from_str::<()>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
     }
 
     async fn get_sbt_request_by_auth_code(

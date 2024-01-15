@@ -42,6 +42,23 @@
             }
         }
 
+        function updateUser() {
+            const session = sessionStorage.getItem("airdao-gov-user-session");
+            const wallet = session ? parseJwtAndVerify(session) : null;
+
+            if (!wallet) {
+                sessionStorage.removeItem("airdao-gov-user-session");
+                window.location.replace("/");
+            } else {
+                const name = encodeURIComponent(document.getElementById("name").value);
+                const role = encodeURIComponent(document.getElementById("role").value);
+                const telegram = encodeURIComponent(document.getElementById("telegram").value);
+                const twitter = encodeURIComponent(document.getElementById("twitter").value);                
+                const bio = encodeURIComponent(document.getElementById("bio").value);
+                window.location.replace(`/update-user?session=${session}&name=${name}&role=${role}&telegram=${telegram}&twitter=${twitter}&bio=${bio}`);
+            }
+        }
+
         setTimeout(() => {
             const session = new URLSearchParams(window.location.search).get("session");
             if (parseJwtAndVerify(session)) {
@@ -52,9 +69,51 @@
             }
         }, 0)
     </script>
+    <style>
+        .bio {
+            display: flex;
+            align-items: top;
+        }
+    </style>
 </head>
 <body>
+    <h1>User Profile</h1>
+    <p>
+        <p>
+            <label for="wallet">Wallet:</label>
+            <input type="text" id="wallet" name="wallet" value="{{USER_WALLET}}" maxlength="64" size="64" disabled="true" />
+        </p>
+        <p>
+            <label for="name">Name:</label>
+            <input type="text" id="name" name="name" value="{{USER_NAME}}" maxlength="64" size="64" />
+        </p>
+        <p>
+            <label for="role">Role:</label>
+            <input type="text" id="role" name="role" value="{{USER_ROLE}}" maxlength="64" size="64" />
+        </p>
+        <p>
+            <label for="email">Email:</label>
+            <input type="text" id="email" name="email" value="{{USER_EMAIL}}" disabled="true" maxlength="64" size="64" />
+        </p>
+        <p>
+            <label for="telegram">Telegram:</label>
+            <input type="text" id="telegram" name="telegram" value="{{USER_TELEGRAM}}" maxlength="64" size="64" />
+        </p>
+        <p>
+            <label for="twitter">Twitter:</label>
+            <input type="text" id="twitter" name="twitter" value="{{USER_TWITTER}}" maxlength="64" size="64" />
+        </p>
+        <div class="bio">
+            <label for="bio">Bio:</label>
+            <textarea id="bio" name="bio" cols="48" rows="10" style="resize:none">{{USER_BIO}}</textarea>
+        </div>
+        <p>
+            <button id="idUpdate" onclick="updateUser()">Update Profile</button>
+        </p>
+    </p>
     <h1>Authorize with Fractal</h1>
-    <button id="idAuthorize" onclick="authorize()">Authorize with Fractal</button>
+    <p>
+        <button id="idAuthorize" onclick="authorize()">Authorize with Fractal</button>
+    </p>
 </body>
 </html>

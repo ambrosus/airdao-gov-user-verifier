@@ -168,7 +168,7 @@ pub fn recover_eth_address(
 pub fn parse_evm_like_address(address: &str) -> Result<Address, anyhow::Error> {
     let bytes = hex::decode(&address[2..])?;
     let address_bytes = <[u8; 20]>::try_from(bytes.as_slice())?;
-    let address = Address::try_from(&address_bytes)?;
+    let address = Address::from(&address_bytes);
 
     Ok(address)
 }

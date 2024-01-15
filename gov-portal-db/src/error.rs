@@ -1,6 +1,8 @@
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
 
+use crate::users_manager;
+
 #[derive(thiserror::Error, Debug)]
 pub enum AppError {
     #[error("JSON parse failure: {0}")]
@@ -9,6 +11,8 @@ pub enum AppError {
     Generic(String),
     #[error("Server error: {0}")]
     ServerError(#[from] std::io::Error),
+    #[error("{0}")]
+    InvalidInput(#[from] users_manager::error::Error),
 }
 
 impl IntoResponse for AppError {
@@ -19,6 +23,7 @@ impl IntoResponse for AppError {
                 "Internal server error".to_owned(),
             ),
             Self::Generic(e) => (StatusCode::UNAUTHORIZED, format!("Request failure: {e}")),
+            Self::InvalidInput(e) => (StatusCode::NOT_ACCEPTABLE, format!("Invalid input: {e}")),
         };
         (status, Json(json!({ "error": err_msg }))).into_response()
     }

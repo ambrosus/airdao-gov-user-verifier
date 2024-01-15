@@ -87,6 +87,7 @@ dependencies = [
  "ecdsa",
  "ethabi",
  "ethereum-types",
+ "futures-util",
  "hex",
  "k256",
  "log",
