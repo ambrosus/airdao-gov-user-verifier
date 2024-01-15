@@ -3,7 +3,6 @@ FROM debian:bullseye-slim
 WORKDIR /app
 
 COPY --from=ghcr.io/ambrosus/airdao-gov-user-binary:main /tmp/builder/target/release/airdao-gov-user-verifier .
-
-RUN mkdir -p ./config
+COPY --from=ghcr.io/ambrosus/airdao-gov-user-binary:main /tmp/builder/config /app/config
 
 CMD ["./airdao-gov-user-verifier"]
