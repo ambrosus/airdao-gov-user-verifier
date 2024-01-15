@@ -4,6 +4,6 @@ WORKDIR /app
 
 COPY --from=ghcr.io/ambrosus/airdao-gov-user-binary:main /tmp/builder/target/release/airdao-gov-portal-db .
 
-RUN mkdir -p ./config
+RUN mkdir -p ./gov-portal-db/config
 
 CMD ["./airdao-gov-portal-db"]
