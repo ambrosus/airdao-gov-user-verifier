@@ -401,7 +401,7 @@ async fn verify_email_route(
     State(state): State<AppState>,
     Query(req): Query<VerifyEmailQuery>,
 ) -> Result<Html<String>, String> {
-    let registration_token = match serde_json::from_str::<serde_email::Email>(&req.email) {
+    let registration_token = match serde_email::Email::from_str(&req.email) {
         Ok(email) => state.verify_email(&email, &req.session).await,
         Err(e) => Err(anyhow::anyhow!("Invalid user email: {e}")),
     };
