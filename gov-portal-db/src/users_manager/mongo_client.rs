@@ -109,7 +109,7 @@ async fn initialize_collection(
     let collection = db.collection::<Document>(collection_name);
 
     // Create new collection (if not present in database) and unique index by wallet address
-    if db
+    if !db
         .list_collection_names(None)
         .await?
         .into_iter()
