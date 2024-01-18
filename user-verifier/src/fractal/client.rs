@@ -63,7 +63,7 @@ impl FractalClient {
             oauth_token = self.refresh_oauth_token(oauth_token).await?;
         }
 
-        tracing::trace!("Acquired user token: {oauth_token:?}");
+        tracing::debug!("Acquired user token: {oauth_token:?}");
 
         let fetched_res = self
             .inner_client
@@ -96,10 +96,10 @@ impl FractalClient {
                     token: oauth_token,
                 })
             }
-            Err(e) => {
-                tracing::error!("Unable to fetch user. Error: {:?}", e);
-                Err(e)
-            }
+            Err(e) => Err(AppError::FractalError(format!(
+                "Unable to fetch user. Error: {:?}",
+                e
+            ))),
         }
     }
 
@@ -125,7 +125,7 @@ impl FractalClient {
             .text()
             .await?;
 
-        tracing::trace!("Acquired raw fractal token response: {data}");
+        tracing::debug!("Acquired raw fractal token response: {data}");
 
         match serde_json::from_str::<TokenDetails>(&data) {
             Ok(token) if token.token_type.as_str() == "Bearer" => Ok(OAuthToken::from(token)),
@@ -135,7 +135,7 @@ impl FractalClient {
     }
 
     async fn refresh_oauth_token(&self, oauth_token: OAuthToken) -> Result<OAuthToken, AppError> {
-        tracing::trace!("Refresh for OAuthToken: {oauth_token:?}");
+        tracing::debug!("Refresh for OAuthToken: {oauth_token:?}");
 
         let params: [(&str, &str); 4] = [
             ("client_id", &self.config.client_id),

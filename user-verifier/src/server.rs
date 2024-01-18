@@ -52,12 +52,20 @@ async fn verify_endpoint(
 ) -> Result<Json<VerifyAccountResponse>, AppError> {
     tracing::debug!("Request: {req:?}");
 
-    let user = state
+    let result = match state
         .client
         .fetch_and_verify_user(req.token, req.wallet)
-        .await?;
-
-    let result = create_verify_account_response(&state.signer, req.wallet, user, Utc::now());
+        .await
+    {
+        Ok(user) => create_verify_account_response(&state.signer, req.wallet, user, Utc::now()),
+        Err(e) => {
+            tracing::warn!(
+                "Failed to process verify request (wallet: {}). Error: {e}",
+                req.wallet
+            );
+            return Err(e);
+        }
+    };
 
     tracing::debug!("Response: {result:?}");
 

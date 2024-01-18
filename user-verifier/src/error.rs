@@ -21,6 +21,8 @@ pub enum AppError {
     SigningError(#[from] k256::ecdsa::Error),
     #[error("Http request failed: {0}")]
     ReqwestError(#[from] reqwest::Error),
+    #[error("Fractal error: {0}")]
+    FractalError(String),
 }
 
 impl IntoResponse for AppError {
@@ -29,7 +31,8 @@ impl IntoResponse for AppError {
             Self::ParseError(_)
             | Self::ServerError(_)
             | Self::SigningError(_)
-            | Self::ReqwestError(_) => (
+            | Self::ReqwestError(_)
+            | Self::FractalError(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_owned(),
             ),
