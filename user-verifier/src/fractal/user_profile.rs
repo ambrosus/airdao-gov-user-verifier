@@ -16,8 +16,8 @@ pub struct UserProfile {
 }
 
 /// Fractal user id represented as hexadecimal string
-#[derive(Deserialize, Debug, Clone, PartialEq)]
-pub struct UserId(pub String);
+#[derive(Debug, Clone, PartialEq)]
+pub struct UserId(pub u128);
 
 impl std::fmt::Display for UserId {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -25,16 +25,18 @@ impl std::fmt::Display for UserId {
     }
 }
 
-impl AsRef<String> for UserId {
-    fn as_ref(&self) -> &String {
-        &self.0
+impl<'de> Deserialize<'de> for UserId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        uuid::Uuid::deserialize(deserializer).map(|uuid| Self(uuid.as_u128()))
     }
 }
 
 impl From<Uuid> for UserId {
     fn from(value: Uuid) -> Self {
-        let mut buf = [0u8; uuid::fmt::Simple::LENGTH];
-        Self(value.as_simple().encode_lower(&mut buf).to_owned())
+        Self(value.as_u128())
     }
 }
 

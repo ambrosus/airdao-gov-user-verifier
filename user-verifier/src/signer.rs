@@ -28,10 +28,10 @@ pub struct SbtRequestSigner {
 #[derive(Serialize, Debug)]
 pub struct SignedSBTRequest {
     #[serde(rename = "d")]
-    data: String,
-    v: u8,
-    r: String,
-    s: String,
+    pub data: String,
+    pub v: u8,
+    pub r: String,
+    pub s: String,
 }
 
 impl SbtRequestSigner {
@@ -43,7 +43,7 @@ impl SbtRequestSigner {
     pub fn build_signed_sbt_request(
         &self,
         wallet: Address,
-        user_id: String,
+        user_id: u128,
         datetime: DateTime<Utc>,
     ) -> Result<SignedSBTRequest, AppError> {
         let req_expires_at = (datetime + self.config.request_lifetime).timestamp() as u64;
@@ -60,7 +60,7 @@ impl SbtRequestSigner {
         // Byte-array data (ABI encoded) is hex encoded to string, and should be hex decoded into byte-array for signature verification.
         Ok(SignedSBTRequest {
             data: hex::encode(encoded_req),
-            v: recovery_id.to_byte(),
+            v: recovery_id.to_byte() + 27,
             r: hex::encode(r),
             s: hex::encode(s),
         })
@@ -72,12 +72,15 @@ mod tests {
     use k256::{
         ecdsa::signature::DigestVerifier, elliptic_curve::scalar::ScalarPrimitive, Secp256k1,
     };
+    use std::str::FromStr;
 
     use super::*;
 
     #[test]
     fn test_build_signed_sbt_request() {
-        let user_id = "SomeUserId".to_owned();
+        let user_id = uuid::Uuid::from_str("01020304-0506-1122-8877-665544332211")
+            .unwrap()
+            .as_u128();
         let config = SignerConfig {
             signing_key: SigningKey::from_slice(
                 &hex::decode("356e70d642cc8ca8c3c502a5d3b210a1791f46c25fab9f8edde2f20f02e33fe7")
@@ -124,7 +127,7 @@ mod tests {
         let recovered_key = k256::ecdsa::VerifyingKey::recover_from_digest(
             Keccak256::new_with_prefix(&hex::decode(&req.data).unwrap()),
             &signature,
-            req.v.try_into().unwrap(),
+            (req.v - 27).try_into().unwrap(),
         )
         .unwrap();
 

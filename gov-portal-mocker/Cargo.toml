@@ -39,7 +39,6 @@ log = { workspace = true }
 
 # Misc
 backtrace = { workspace = true }
-uuid = { workspace = true }
 config = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }

@@ -3,7 +3,7 @@
     "signer": {
         "signingKey": null,
         "requestLifetime": 60000,
-        "sbtLifetime": 3153600000
+        "sbtLifetime": 3153600000000
     },
     "fractal": {
         "requestTokenUrl": "https://auth.fractal.id/oauth/token",

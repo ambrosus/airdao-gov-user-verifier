@@ -49,7 +49,7 @@ mod tests {
     #[test]
     fn test_verify_account_response() {
         let fake_datetime = DateTime::<Utc>::default();
-        let user_id: UserId = Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8")
+        let user_id: UserId = Uuid::parse_str("a1a2a3a4-b1b2-c1c2-d1d2-d3d4d5d6d7d8")
             .unwrap()
             .into();
         let token = OAuthToken {
@@ -104,7 +104,7 @@ mod tests {
                 name: "Verification is approved",
                 input: VerificationStatus::Approved,
                 expected: Ok(VerifyAccountResponse::Approved(ApprovedResponse {
-                    msg: "eyJkIjoiMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwOTNhMTZiNDAzODcyOWYwYzQ5OGZkZDlhNzBlMDVmYmIzM2Y3OWEyZDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwODAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMGI0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAxNTE4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMjA2MTMxNjEzMjYxMzM2MTM0NjIzMTYyMzI2MzMxNjMzMjY0MzE2NDMyNjQzMzY0MzQ2NDM1NjQzNjY0Mzc2NDM4IiwidiI6MSwiciI6IjA2MGRhYjczOWYzYTZmMzI4NzI1NDUyN2VjMDdmYTc5MzYzNmY3MDI4NWRiZTE5NGRiY2NiYzdkNTZjN2UxNGQiLCJzIjoiMjExNGZmYjJjZTdjYzJhMDFlMWJiMDcwMzhjZTFjODU5MGNhMjIxNTdkNzNmNGQ2NzUyN2MyNGNlMmIzOTRiNyJ9".to_owned(),
+                    msg: "eyJkIjoiMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwOTNhMTZiNDAzODcyOWYwYzQ5OGZkZDlhNzBlMDVmYmIzM2Y3OWEyZDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwYTFhMmEzYTRiMWIyYzFjMmQxZDJkM2Q0ZDVkNmQ3ZDgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMGI0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAxNTE4MCIsInYiOjI4LCJyIjoiYmJhZDJmZmVhZTgzZWIzNTYzZDVmY2UxMTRjZGUyY2U2YzAwMDkzMDAyNTYwYzVkNjcwMWIyZTg1OTU2NTJlNiIsInMiOiIxOWQyZTkzNmYyZGVmMmE0MzA4ZDU3NzQzN2EzMWQyMTI4MGFjZGZiYjQwYjNmMmYzNzZjMzY4NTQzZWEyMzkzIn0=".to_owned(),
                 })),
             },
         ];

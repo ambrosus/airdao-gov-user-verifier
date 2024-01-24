@@ -44,7 +44,7 @@ mongodb = "2"
 
 # Misc
 backtrace = "0"
-uuid = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
 config = { version = "0", default_features = false, features = ["json"] }
 chrono = { version = "0", default_features = false, features = ["clock", "serde"] }
 assert_matches = "1"

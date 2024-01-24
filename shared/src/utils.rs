@@ -83,13 +83,13 @@ pub fn parse_datetime(ts_bytes: &[u8]) -> Result<DateTime<Utc>, String> {
 /// It will be signed and passed later to Issuer smart contract for verification and will result in SBT token mint.
 pub fn encode_sbt_request(
     caller: Address,
-    user_id: String,
+    user_id: u128,
     req_expires_at: u64,
     sbt_expires_at: u64,
 ) -> Bytes {
     encode(&[
         Token::Address(caller),
-        Token::String(user_id),
+        Token::Uint(user_id.into()),
         Token::Uint(Uint::from(req_expires_at)),
         Token::Uint(Uint::from(sbt_expires_at)),
     ])
@@ -99,7 +99,7 @@ pub fn decode_sbt_request(data: Bytes) -> Result<SBTRequest, anyhow::Error> {
     let tokens = ethabi::decode(
         &[
             ParamType::Address,
-            ParamType::String,
+            ParamType::Uint(256),
             ParamType::Uint(256),
             ParamType::Uint(256),
         ],
@@ -213,13 +213,14 @@ mod tests {
         let req_expires_at = now + 180;
         let sbt_expires_at = now + 86400;
         let caller = Address::random();
-        let user_id = "SomeUserID";
-        let encoded =
-            encode_sbt_request(caller, user_id.to_owned(), req_expires_at, sbt_expires_at);
+        let user_id = uuid::Uuid::from_str("01020304-0506-1122-8877-665544332211")
+            .unwrap()
+            .as_u128();
+        let encoded = encode_sbt_request(caller, user_id, req_expires_at, sbt_expires_at);
         let decoded = ethabi::decode(
             &[
                 ethabi::ParamType::Address,
-                ethabi::ParamType::String,
+                ethabi::ParamType::Uint(256),
                 ethabi::ParamType::Uint(256),
                 ethabi::ParamType::Uint(256),
             ],
@@ -228,7 +229,7 @@ mod tests {
         .unwrap();
 
         assert_matches::assert_matches!(&decoded[0], Token::Address(value) if value == &caller);
-        assert_matches::assert_matches!(&decoded[1], Token::String(value) if value.as_str() == user_id);
+        assert_matches::assert_matches!(&decoded[1], Token::Uint(value) if value.as_u128() == user_id);
         assert_matches::assert_matches!(&decoded[2], Token::Uint(value) if value.as_u64() == req_expires_at);
         assert_matches::assert_matches!(&decoded[3], Token::Uint(value) if value.as_u64() == sbt_expires_at);
     }
