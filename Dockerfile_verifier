@@ -5,4 +5,6 @@ WORKDIR /app
 COPY --from=ghcr.io/ambrosus/airdao-gov-user-binary:main /tmp/builder/target/release/airdao-gov-user-verifier .
 COPY --from=ghcr.io/ambrosus/airdao-gov-user-binary:main /tmp/builder/config /app/config
 
+RUN apt-get update && apt-get install -y lsb-release ca-certificates libssl-dev && apt-get clean all
+
 CMD ["./airdao-gov-user-verifier"]
