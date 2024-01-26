@@ -10,6 +10,7 @@ use crate::{
     config::AppConfig, error::AppError, session_token::SessionManager, users_manager::UsersManager,
 };
 
+/// State shared between route handlers
 #[derive(Clone)]
 pub struct AppState {
     pub config: AppConfig,
@@ -30,6 +31,7 @@ impl AppState {
     }
 }
 
+/// JSON-serialized request passed as POST-data to `/token` endpoint and contains signed message by User's wallet secret
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum TokenQuery {
@@ -37,9 +39,8 @@ pub enum TokenQuery {
     NoMessage {},
 }
 
-#[derive(Debug, Deserialize)]
-pub struct UpdateUserProfile {}
-
+/// JSON-serialized request passed as POST-data to `/update-user` endpoint and contains User's profile
+/// info which should be updated in MongoDB
 #[derive(Debug, Deserialize)]
 pub struct UpdateUserRequest {
     #[serde(default)]
@@ -56,8 +57,9 @@ pub struct UpdateUserRequest {
     pub session: SessionToken,
 }
 
+/// JSON-serialized request passed as POST-data to `/verify-email` endpoint to generate registration JWT token
 #[derive(Debug, Deserialize)]
-pub struct VerifyEmailReguest {
+pub struct VerifyEmailRequest {
     pub email: serde_email::Email,
     #[serde(flatten)]
     pub session: SessionToken,
@@ -87,6 +89,7 @@ pub async fn start(config: AppConfig, users_manager: Arc<UsersManager>) -> Resul
     axum::serve(listener, app).await.map_err(AppError::from)
 }
 
+/// Route handler to acquire session JWT token for MongoDB access
 async fn token_route(
     State(state): State<AppState>,
     Json(req): Json<TokenQuery>,
@@ -106,6 +109,7 @@ async fn token_route(
     res.map(Json)
 }
 
+/// Route handler to read User's profile from MongoDB
 async fn user_route(
     State(state): State<AppState>,
     Json(token): Json<SessionToken>,
@@ -127,6 +131,7 @@ async fn user_route(
     res.map(Json)
 }
 
+/// Route handler to update User's profile in MongoDB
 async fn update_user_route(
     State(state): State<AppState>,
     Json(update_req): Json<UpdateUserRequest>,
@@ -148,9 +153,10 @@ async fn update_user_route(
     res.map(Json)
 }
 
+/// Route handler to generate registration JWT token for User which could be send to an email
 async fn verify_email_route(
     State(state): State<AppState>,
-    Json(req): Json<VerifyEmailReguest>,
+    Json(req): Json<VerifyEmailRequest>,
 ) -> Result<Json<UserRegistrationToken>, String> {
     tracing::debug!("[/verify-email] Request {req:?}");
 
@@ -170,6 +176,7 @@ async fn verify_email_route(
     user.map(Json)
 }
 
+/// Route handler to register new User with basic profile
 async fn register_route(
     State(state): State<AppState>,
     Json(reg_token): Json<UserRegistrationToken>,

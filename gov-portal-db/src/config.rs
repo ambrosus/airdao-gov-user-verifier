@@ -8,8 +8,12 @@ use crate::{
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
+    /// Address for a REST server to listen on
     pub listen_address: String,
+    /// Session tokens configuration to allow access to database
     pub session: SessionConfig,
+    /// User registration configuration
     pub registration: UserRegistrationConfig,
+    /// MongoDB client configuration
     pub mongo: MongoConfig,
 }

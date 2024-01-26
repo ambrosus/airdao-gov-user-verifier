@@ -12,8 +12,10 @@ pub struct SessionManager {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct SessionConfig {
+    /// Session lifetime in seconds
     #[serde(deserialize_with = "shared::utils::de_secs_duration")]
     lifetime: Duration,
+    /// Secret phrase used to generate and verify session JWT tokens
     secret: String,
 }
 
@@ -22,6 +24,8 @@ impl SessionManager {
         Self { config }
     }
 
+    /// Acquires a session JWT token to get an access to MongoDB for an eligible user who has proven
+    /// his access to a wallet by signing a messgae
     pub fn acquire_token(&self, encoded_message: &str) -> Result<SessionToken, anyhow::Error> {
         let decoded = general_purpose::STANDARD
             .decode(encoded_message)
@@ -49,6 +53,7 @@ impl SessionManager {
             .map_err(|e| anyhow::Error::msg(format!("Failed to generate JWT token. Error: {}", e)))
     }
 
+    /// Verifies session JWT token and extracts owning user wallet address
     pub fn verify_token(&self, token: &SessionToken) -> Result<Address, anyhow::Error> {
         let wallet = <[u8; 20]>::try_from(
             hex::decode(token.verify(self.config.secret.as_bytes())?)?.as_slice(),
