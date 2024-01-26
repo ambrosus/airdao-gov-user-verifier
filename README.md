@@ -88,6 +88,12 @@ Default configuration and credentials could be overriden by using `./config/cust
 
 Supported logging levels: `info`, `debug`, `trace`. Defaults to `info` log level. Could be set with `RUST_LOG` env var.
 
+## Integration Tests
+
+Integration tests will require running local hardhat node with deployed contracts.
+
+To run integration tests use `cargo test --features enable-integration-tests`
+
 ## Run
 
 ### User Verifier
