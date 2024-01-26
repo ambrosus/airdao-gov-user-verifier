@@ -118,14 +118,14 @@ mod tests {
             .signing_key
             .verifying_key()
             .verify_digest(
-                Keccak256::new_with_prefix(&hex::decode(&req.data).unwrap()),
+                Keccak256::new_with_prefix(hex::decode(&req.data).unwrap()),
                 &signature,
             )
             .unwrap();
 
         // Recover and verify public key
         let recovered_key = k256::ecdsa::VerifyingKey::recover_from_digest(
-            Keccak256::new_with_prefix(&hex::decode(&req.data).unwrap()),
+            Keccak256::new_with_prefix(hex::decode(&req.data).unwrap()),
             &signature,
             (req.v - 27).try_into().unwrap(),
         )

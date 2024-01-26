@@ -137,5 +137,5 @@ pub async fn signed_call<T: web3::Transport, P: contract::tokens::Tokenize + Clo
             caller_secret,
         )
         .await
-        .map_err(|e| contract::Error::Api(e))
+        .map_err(contract::Error::Api)
 }
