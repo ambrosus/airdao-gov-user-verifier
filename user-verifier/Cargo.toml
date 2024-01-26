@@ -50,3 +50,4 @@ dotenv = { workspace = true }
 rand = { workspace = true }
 assert_matches = { workspace = true }
 web3 = "0.19"
+jsonrpc-core = "18.0"

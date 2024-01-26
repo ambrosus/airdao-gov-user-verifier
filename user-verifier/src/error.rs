@@ -9,8 +9,6 @@ pub enum AppError {
     VerificationRejected,
     #[error("Face verification wasn't completed")]
     VerificationNotCompleted,
-    #[error("Http request timed out: {0}")]
-    TimeoutError(String),
     #[error("JSON parse failure: {0}")]
     ParseError(#[from] serde_json::Error),
     #[error("Generic error: {0}")]
@@ -39,7 +37,7 @@ impl IntoResponse for AppError {
             Self::VerificationRejected
             | Self::VerificationNotCompleted
             | Self::WalletMatchFailure => (StatusCode::UNAUTHORIZED, self.to_string()),
-            Self::Generic(e) | Self::TimeoutError(e) => (
+            Self::Generic(e) => (
                 StatusCode::UNAUTHORIZED,
                 format!("Verification failure: {e}"),
             ),
