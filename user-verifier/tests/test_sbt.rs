@@ -1,3 +1,4 @@
+#![cfg(feature = "enable-integration-tests")]
 mod common;
 
 use assert_matches::assert_matches;

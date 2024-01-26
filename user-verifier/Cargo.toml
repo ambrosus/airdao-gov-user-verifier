@@ -16,7 +16,8 @@ tokio = { workspace = true }
 # Ethereum
 ethabi = { workspace = true }
 ethereum-types = { workspace = true }
-jsonrpc-core = { workspace = true }
+web3 = { version = "0.19", optional = true }
+jsonrpc-core = { workspace = true, optional = true }
 
 # Crypto
 k256 = { workspace = true }
@@ -49,5 +50,6 @@ dotenv = { workspace = true }
 [dev-dependencies]
 rand = { workspace = true }
 assert_matches = { workspace = true }
-web3 = "0.19"
-jsonrpc-core = "18.0"
+
+[features]
+enable-integration-tests = ["jsonrpc-core", "web3"]

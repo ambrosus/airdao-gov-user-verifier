@@ -1,3 +1,4 @@
+#![cfg(feature = "enable-integration-tests")]
 use ethereum_types::H256;
 use serde::Serialize;
 use std::str::FromStr;
