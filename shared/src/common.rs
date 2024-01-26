@@ -8,32 +8,40 @@ use crate::utils::decode_sbt_request;
 /// Minimum time required before oauth2 token expires in minutes
 static OAUTH_TOKEN_MINIMUM_LIFETIME: i64 = 5;
 
+/// Verification request struct to check if User has approved Fractal's face verification
+/// to acquire signed SBT mint request
 #[derive(Deserialize, Debug)]
 pub struct VerifyAccountRequest {
+    /// User's wallet address
     pub wallet: ethabi::Address,
+    /// Fractal token's kind
     #[serde(flatten)]
     pub token: TokenKind,
 }
 
+/// Enumerable which represents a response to a User for his verification request
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(untagged)]
 pub enum VerifyAccountResponse {
+    /// Approved variant response if User is eligible to mint Human SBT token
     Approved(ApprovedResponse),
+    /// Pending variant response if User's face verification is still pending at Fractal side
     Pending(PendingResponse),
 }
 
-/// Signed response for a fractal user with approved face verification
+/// Signed response for a User with approved face verification
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct ApprovedResponse {
     pub msg: String,
 }
 
-/// Response for a fractal user whos face verification is pending for final decision
+/// Response for a User whos face verification is pending for final decision
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct PendingResponse {
     pub token: OAuthToken,
 }
 
+/// Signed SBT mint request to be returned to User for a subsequent `sbtMint` smart-contract call
 #[derive(Deserialize, Serialize, Debug)]
 pub struct SignedSBTRequest {
     #[serde(rename = "d")]
@@ -43,6 +51,7 @@ pub struct SignedSBTRequest {
     pub s: String,
 }
 
+/// Decoded SBT signed request to be used by a mocker
 #[derive(Debug, Clone, Serialize)]
 pub struct SBTRequest {
     pub caller: Address,
@@ -51,6 +60,7 @@ pub struct SBTRequest {
     pub sbt_expires_at: u64,
 }
 
+/// User's profile struct
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct User {
     pub wallet: Address,
@@ -84,26 +94,32 @@ impl TryFrom<RawUserRegistrationToken> for User {
     }
 }
 
+/// Session JWT token for an access to MongoDB
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SessionToken {
     pub token: String,
 }
 
+/// The claims part of session JWT token
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawSessionToken {
+    /// User's wallet address
     #[serde(rename = "wallet")]
     pub checksum_wallet: String,
+    /// Expiration date for a session JWT token
     pub expires_at: u64,
 }
 
 impl RawSessionToken {
+    /// Verifies that session JWT token is not expired
     pub fn verify(&self) -> bool {
         self.expires_at > Utc::now().timestamp_millis() as u64
     }
 }
 
 impl SessionToken {
+    /// Creates a new session JWT token for specific User's wallet address
     pub fn new(token: RawSessionToken, secret: &[u8]) -> Result<Self, anyhow::Error> {
         jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
@@ -114,6 +130,7 @@ impl SessionToken {
         .map(|token| Self { token })
     }
 
+    /// Verifies that session JWT token is valid and not expired. Returns extracted User's wallet address
     pub fn verify(&self, secret: &[u8]) -> Result<String, anyhow::Error> {
         let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::default());
         validation.set_required_spec_claims(&<[&str; 0]>::default());
@@ -132,6 +149,7 @@ impl SessionToken {
     }
 }
 
+/// Custom message which User has been asked to sign with his wallet secret to prove that he is an owner of a wallet
 #[derive(Debug, Deserialize)]
 pub struct WalletSignedMessage {
     #[serde(rename = "msg")]
@@ -148,19 +166,23 @@ impl TryFrom<SignedSBTRequest> for SBTRequest {
     }
 }
 
+/// Fractal token kind
 #[derive(Deserialize, Debug, PartialEq)]
 #[serde(untagged)]
 pub enum TokenKind {
+    /// First authorization token which could be used to acquire OAuth token from Fractal to access User's profile data
     AuthorizationCode {
         auth_code: String,
         redirect_uri: String,
     },
+    /// OAuth token to access User's profile data from Fractal
     OAuth {
         token: OAuthToken,
         redirect_uri: String,
     },
 }
 
+/// Fractal OAuth token struct
 #[derive(Debug, PartialEq, Clone)]
 pub struct OAuthToken {
     pub access_token: String,
@@ -168,6 +190,7 @@ pub struct OAuthToken {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Fractal OAuth token lifetime info
 #[derive(Deserialize, Debug)]
 pub struct TokenLifetime {
     pub expires_in: u64,
@@ -230,38 +253,47 @@ impl<'de> Deserialize<'de> for OAuthToken {
 }
 
 impl TokenLifetime {
+    /// Returns UTC datetime when Fractal OAuth token will expire
     pub fn expires_at(&self) -> DateTime<Utc> {
         Utc.timestamp_nanos((self.created_at + self.expires_in) as i64 * 1_000_000_000)
     }
 }
 
 impl OAuthToken {
+    /// Returns if Fractal OAuth token requires to be refreshed
     pub fn requires_refresh(&self) -> bool {
         Utc::now() + Duration::minutes(OAUTH_TOKEN_MINIMUM_LIFETIME) >= self.expires_at
     }
 }
 
+/// Registration JWT token used to register User's profile first time in AirDao DB
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserRegistrationToken {
     pub token: String,
 }
 
+/// Registration JWT token's claims struct with User's basic profile info
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawUserRegistrationToken {
+    /// User's wallet address
     #[serde(rename = "wallet")]
     pub checksum_wallet: String,
+    /// User's email
     pub email: serde_email::Email,
+    /// Expiration date in millis after registration token will become invalid
     pub expires_at: u64,
 }
 
 impl RawUserRegistrationToken {
+    /// Verifies that registration token is not expired
     pub fn verify(&self) -> bool {
         self.expires_at > Utc::now().timestamp_millis() as u64
     }
 }
 
 impl UserRegistrationToken {
+    /// Creates new registration JWT token for a User
     pub fn new(token: RawUserRegistrationToken, secret: &[u8]) -> Result<Self, anyhow::Error> {
         jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
@@ -272,6 +304,7 @@ impl UserRegistrationToken {
         .map(|token| Self { token })
     }
 
+    /// Verifies that registration JWT token is valid and not expired. Returns User's basic profile info
     pub fn verify(&self, secret: &[u8]) -> Result<RawUserRegistrationToken, anyhow::Error> {
         let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::default());
         validation.set_required_spec_claims(&<[&str; 0]>::default());
