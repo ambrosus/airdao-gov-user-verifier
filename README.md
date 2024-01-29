@@ -54,6 +54,7 @@ Default configuration could be found in `./gov-portal-mocker/config/default.json
 - `registration`: registration manager configuration
     - `secret`: secret to generate registration tokens to be sent to user specified email for verification. Should be set before app start
     - `lifetime`: lifetime duration in seconds for which the registration token will be valid to register user by using middleware. Defaults to 10 min
+    - `userProfileAttributes`: restrictions to user profile attributes for data validation purpose, eg. max user name or bio length
 - `mongo`: MongoDB configuration
     - `url`: mongo connection url in format `mongodb://host:port`. Should be set before app start
     - `db`: database name with users collection. Defaults to `AirDAOGovPortal`

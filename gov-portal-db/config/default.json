@@ -13,7 +13,8 @@
             "emailMaxLength": 64,
             "telegramMaxLength": 32,
             "twitterMaxLength": 32,
-            "bioMaxLength": 250
+            "bioMaxLength": 250,
+            "avatarUrlMaxLength": 250
         }
     },
     "mongo": {

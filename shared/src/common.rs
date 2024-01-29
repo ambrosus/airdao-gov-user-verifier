@@ -76,6 +76,8 @@ pub struct User {
     pub twitter: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bio: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<url::Url>,
 }
 
 impl TryFrom<RawUserRegistrationToken> for User {

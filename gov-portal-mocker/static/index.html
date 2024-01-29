@@ -55,7 +55,8 @@
                 const telegram = encodeURIComponent(document.getElementById("telegram").value);
                 const twitter = encodeURIComponent(document.getElementById("twitter").value);                
                 const bio = encodeURIComponent(document.getElementById("bio").value);
-                window.location.replace(`/update-user?session=${session}&name=${name}&role=${role}&telegram=${telegram}&twitter=${twitter}&bio=${bio}`);
+                const avatar = encodeURIComponent(document.getElementById("avatar").value);
+                window.location.replace(`/update-user?session=${session}&name=${name}&role=${role}&telegram=${telegram}&twitter=${twitter}&bio=${bio}&avatar=${avatar}`);
             }
         }
 
@@ -82,6 +83,10 @@
         <p>
             <label for="wallet">Wallet:</label>
             <input type="text" id="wallet" name="wallet" value="{{USER_WALLET}}" maxlength="64" size="64" disabled="true" />
+        </p>
+        <p>
+            <label for="avatar">Avatar URL:</label>
+            <input type="text" id="avatar" name="avatar" value="{{USER_AVATAR_URL}}" maxlength="64" size="64" />
         </p>
         <p>
             <label for="name">Name:</label>

@@ -19,6 +19,7 @@ k256 = { workspace = true }
 
 # Web
 jsonwebtoken = { workspace = true }
+url = { workspace = true }
 
 # SerDe
 serde = { workspace = true }

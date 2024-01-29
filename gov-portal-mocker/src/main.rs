@@ -95,6 +95,7 @@ pub enum UpdateUserQuery {
         telegram: Option<String>,
         twitter: Option<String>,
         bio: Option<String>,
+        avatar: Option<String>,
     },
     NoJwtToken {},
 }
@@ -212,6 +213,13 @@ async fn index_route(
                         "{{USER_WALLET}}",
                         &utils::get_checksum_address(&user.wallet),
                     )
+                    .replace(
+                        "{{USER_AVATAR_URL}}",
+                        user.avatar
+                            .as_ref()
+                            .map(|url| url.as_str())
+                            .unwrap_or_default(),
+                    )
                     .replace("{{USER_NAME}}", user.name.as_deref().unwrap_or_default())
                     .replace("{{USER_ROLE}}", user.role.as_deref().unwrap_or_default())
                     .replace(
@@ -249,8 +257,9 @@ async fn update_user_route(
             telegram,
             twitter,
             bio,
+            avatar,
         } => match state
-            .update_user(&token, name, role, telegram, twitter, bio)
+            .update_user(&token, name, role, telegram, twitter, bio, avatar)
             .and_then(|_| state.get_user(&token))
             .await
         {
@@ -281,6 +290,13 @@ async fn update_user_route(
                     .replace(
                         "{{USER_WALLET}}",
                         &utils::get_checksum_address(&user.wallet),
+                    )
+                    .replace(
+                        "{{USER_AVATAR_URL}}",
+                        user.avatar
+                            .as_ref()
+                            .map(|url| url.as_str())
+                            .unwrap_or_default(),
                     )
                     .replace("{{USER_NAME}}", user.name.as_deref().unwrap_or_default())
                     .replace("{{USER_ROLE}}", user.role.as_deref().unwrap_or_default())
@@ -523,6 +539,7 @@ impl AppState {
         serde_json::from_str::<User>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn update_user(
         &self,
         token: &str,
@@ -531,7 +548,12 @@ impl AppState {
         telegram: Option<String>,
         twitter: Option<String>,
         bio: Option<String>,
+        avatar: Option<String>,
     ) -> Result<(), anyhow::Error> {
+        let avatar = match avatar {
+            Some(avatar_url) => Some(url::Url::parse(&avatar_url)?),
+            None => None,
+        };
         let raw_data = self
             .client
             .post(&[&self.config.user_db.base_url, "/update-user"].concat())
@@ -542,6 +564,7 @@ impl AppState {
                 "telegram": telegram,
                 "twitter": twitter,
                 "bio": bio,
+                "avatar": avatar,
             }))
             .send()
             .await?

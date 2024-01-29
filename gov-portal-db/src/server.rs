@@ -53,6 +53,8 @@ pub struct UpdateUserRequest {
     pub twitter: Option<String>,
     #[serde(default)]
     pub bio: Option<String>,
+    #[serde(default)]
+    pub avatar: Option<url::Url>,
     #[serde(flatten)]
     pub session: SessionToken,
 }
@@ -212,6 +214,7 @@ impl UpdateUserRequest {
             telegram: self.telegram,
             twitter: self.twitter,
             bio: self.bio,
+            avatar: self.avatar,
         }
     }
 }

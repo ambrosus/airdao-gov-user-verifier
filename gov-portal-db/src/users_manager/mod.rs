@@ -43,6 +43,7 @@ pub struct UserProfileAttributes {
     telegram_max_length: usize,
     twitter_max_length: usize,
     bio_max_length: usize,
+    avatar_url_max_length: usize,
 }
 
 /// User profiles manager which provides read/write access to user profile data stored MongoDB
@@ -260,6 +261,21 @@ impl UsersManager {
             )));
         }
 
+        if user.avatar.as_ref().is_some_and(|value| {
+            value.as_str().len()
+                > self
+                    .registration_config
+                    .user_profile_attributes
+                    .avatar_url_max_length
+        }) {
+            return Err(error::Error::InvalidInput(format!(
+                "Avatar URL too long (max: {})",
+                self.registration_config
+                    .user_profile_attributes
+                    .avatar_url_max_length
+            )));
+        }
+
         Ok(())
     }
 }
@@ -292,7 +308,8 @@ mod tests {
                     "emailMaxLength": 64,
                     "telegramMaxLength": 32,
                     "twitterMaxLength": 32,
-                    "bioMaxLength": 250
+                    "bioMaxLength": 250,
+                    "avatarUrlMaxLength": 250
                 }
             }
         "#,
