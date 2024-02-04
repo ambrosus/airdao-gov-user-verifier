@@ -3,7 +3,6 @@ mod common;
 
 use assert_matches::assert_matches;
 use chrono::Utc;
-use ethereum_types::Address;
 use jsonrpc_core::Error as RPCError;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -14,7 +13,7 @@ use web3::{
 
 use airdao_gov_user_verifier::signer;
 
-use common::{init_human_sbt_issuer_contract, init_sbt_oracle_contract, signed_call};
+use common::{init_human_sbt_contract, init_human_sbt_issuer_contract, signed_call};
 
 const ERR_SBT_EXPIRED_OR_NOT_EXIST: &str = "Error: VM Exception while processing transaction: reverted with reason string 'SBT expired or not exist'";
 const ERR_SBT_ALREADY_EXIST: &str = "Error: VM Exception while processing transaction: reverted with reason string 'Non-expired Human SBT already exist'";
@@ -36,9 +35,8 @@ async fn test_sbt() -> Result<(), anyhow::Error> {
     let http = web3::transports::Http::new("http://127.0.0.1:8545")?;
     let web3_client = web3::Web3::new(http);
 
-    let human_sbt_addr = Address::from_str("0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9").unwrap();
+    let sbt_contract = init_human_sbt_contract(web3_client.eth())?;
     let issuer_contract = init_human_sbt_issuer_contract(web3_client.eth())?;
-    let oracle_contract = init_sbt_oracle_contract(web3_client.eth())?;
 
     // Account #1 private key from Hardhat local node
     let signer_private_key =
@@ -71,7 +69,13 @@ async fn test_sbt() -> Result<(), anyhow::Error> {
     signed_call(
         &issuer_contract,
         "sbtMint",
-        (signed_data.clone(), req.v, sig_r, sig_s),
+        (
+            sbt_contract.address(),
+            signed_data.clone(),
+            req.v,
+            sig_r,
+            sig_s,
+        ),
         &wallet_secret,
     )
     .await
@@ -80,7 +84,7 @@ async fn test_sbt() -> Result<(), anyhow::Error> {
     let err_already_exist = signed_call(
         &issuer_contract,
         "sbtMint",
-        (signed_data, req.v, sig_r, sig_s),
+        (sbt_contract.address(), signed_data, req.v, sig_r, sig_s),
         &wallet_secret,
     )
     .await
@@ -88,10 +92,10 @@ async fn test_sbt() -> Result<(), anyhow::Error> {
     assert_matches!(err_already_exist, ApiError(web3::Error::Rpc(RPCError { message, .. })) if message.as_str() == ERR_SBT_ALREADY_EXIST);
 
     // Verify that Human SBT is minted correctly
-    let (user_id, _) = oracle_contract
+    let (user_id, _) = sbt_contract
         .query::<(u128, u64), _, _, _>(
             "sbtVerify",
-            (human_sbt_addr, wallet.address()),
+            wallet.address(),
             wallet.address(),
             contract::Options::default(),
             None,
@@ -104,15 +108,20 @@ async fn test_sbt() -> Result<(), anyhow::Error> {
     );
 
     // Try to burn Human SBT
-    signed_call(&issuer_contract, "sbtBurn", wallet.address(), &owner_secret)
-        .await
-        .unwrap();
+    signed_call(
+        &issuer_contract,
+        "sbtBurn",
+        (sbt_contract.address(), wallet.address()),
+        &owner_secret,
+    )
+    .await
+    .unwrap();
 
     // Verify that Human SBT doesn't exist anymore
-    let err_no_sbt = oracle_contract
+    let err_no_sbt = sbt_contract
         .query::<(u128, u64), _, _, _>(
             "sbtVerify",
-            (human_sbt_addr, wallet.address()),
+            wallet.address(),
             wallet.address(),
             contract::Options::default(),
             None,

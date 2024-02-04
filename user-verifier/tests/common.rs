@@ -13,100 +13,141 @@ pub fn to_bytes<T: Serialize>(structure: T) -> Result<Vec<u8>, serde_json::Error
     serde_json::to_writer(&mut bytes, &structure).map(|_| bytes)
 }
 
-pub fn init_human_sbt_issuer_contract<T: web3::Transport>(
+pub fn init_human_sbt_contract<T: web3::Transport>(
     eth: Eth<T>,
 ) -> Result<Contract<T>, anyhow::Error> {
-    // Default address where Human SBT Issuer proxy is deployed at Hardhat local node
-    let sbt_issuer_address =
-        ethereum_types::Address::from_str("0x5FC8d32690cc91D4c39d9d3abcBD16989F875707")?;
-
-    let abi_bytes = to_bytes(serde_json::json!([
-          {
-            "inputs": [
-              {
-                "internalType": "address",
-                "name": "userWallet",
-                "type": "address"
-              }
-            ],
-            "name": "sbtBurn",
-            "outputs": [],
-            "stateMutability": "nonpayable",
-            "type": "function"
-          },
-          {
-            "inputs": [
-              {
-                "internalType": "bytes",
-                "name": "signedData",
-                "type": "bytes"
-              },
-              {
-                "internalType": "uint8",
-                "name": "v",
-                "type": "uint8"
-              },
-              {
-                "internalType": "bytes32",
-                "name": "r",
-                "type": "bytes32"
-              },
-              {
-                "internalType": "bytes32",
-                "name": "s",
-                "type": "bytes32"
-              }
-            ],
-            "name": "sbtMint",
-            "outputs": [],
-            "stateMutability": "payable",
-            "type": "function"
-          }
-    ]))?;
-
-    Contract::from_json(eth, sbt_issuer_address, &abi_bytes).map_err(anyhow::Error::from)
-}
-
-pub fn init_sbt_oracle_contract<T: web3::Transport>(
-    eth: Eth<T>,
-) -> Result<Contract<T>, anyhow::Error> {
-    // Default address where SBT Oracle proxy is deployed at Hardhat local node
-    let sbt_oracle_address =
+    // Default address where Human SBT proxy is deployed at Hardhat local node
+    let sbt_address =
         ethereum_types::Address::from_str("0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512")?;
 
     let abi_bytes = to_bytes(serde_json::json!([
+      {
+        "inputs": [
           {
-            "inputs": [
-              {
-                "internalType": "address",
-                "name": "sbtContract",
-                "type": "address"
-              },
-              {
-                "internalType": "address",
-                "name": "userWallet",
-                "type": "address"
-              }
-            ],
-            "name": "sbtVerify",
-            "outputs": [
-              {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-              },
-              {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-              }
-            ],
-            "stateMutability": "view",
-            "type": "function"
+            "internalType": "address",
+            "name": "userWallet",
+            "type": "address"
           }
+        ],
+        "name": "sbtBurn",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "userWallet",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "userId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "expiresAt",
+            "type": "uint256"
+          }
+        ],
+        "name": "sbtMint",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "userWallet",
+            "type": "address"
+          }
+        ],
+        "name": "sbtVerify",
+        "outputs": [
+          {
+            "internalType": "uint256",
+            "name": "",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "",
+            "type": "uint256"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      }
     ]))?;
 
-    Contract::from_json(eth, sbt_oracle_address, &abi_bytes).map_err(anyhow::Error::from)
+    Contract::from_json(eth, sbt_address, &abi_bytes).map_err(anyhow::Error::from)
+}
+
+pub fn init_human_sbt_issuer_contract<T: web3::Transport>(
+    eth: Eth<T>,
+) -> Result<Contract<T>, anyhow::Error> {
+    // Default address where Human SBT Issuer contract is deployed at Hardhat local node
+    let sbt_issuer_address =
+        ethereum_types::Address::from_str("0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0")?;
+
+    let abi_bytes = to_bytes(serde_json::json!([
+      {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "sbtAddress",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "userWallet",
+            "type": "address"
+          }
+        ],
+        "name": "sbtBurn",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "sbtAddress",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes",
+            "name": "signedData",
+            "type": "bytes"
+          },
+          {
+            "internalType": "uint8",
+            "name": "v",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "r",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "s",
+            "type": "bytes32"
+          }
+        ],
+        "name": "sbtMint",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function"
+      }
+    ]))?;
+
+    Contract::from_json(eth, sbt_issuer_address, &abi_bytes).map_err(anyhow::Error::from)
 }
 
 pub async fn signed_call<T: web3::Transport, P: contract::tokens::Tokenize + Clone>(
