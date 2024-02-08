@@ -15,8 +15,7 @@ use tokio::time::Duration;
 
 use shared::common::{RawUserRegistrationToken, User, UserRegistrationToken};
 
-use crate::config::AppConfig;
-use mongo_client::MongoClient;
+use mongo_client::{MongoClient, MongoConfig};
 
 const MONGO_DUPLICATION_ERROR: i32 = 11000;
 
@@ -26,24 +25,24 @@ const MONGO_DUPLICATION_ERROR: i32 = 11000;
 pub struct UserRegistrationConfig {
     /// Lifetime for which JWT registration token will be valid to register new user profile
     #[serde(deserialize_with = "shared::utils::de_secs_duration")]
-    lifetime: Duration,
+    pub lifetime: Duration,
     /// Secret being used to sign JWT registration token
-    secret: String,
+    pub secret: String,
     /// User profile attributes verification settings
-    user_profile_attributes: UserProfileAttributes,
+    pub user_profile_attributes: UserProfileAttributes,
 }
 
 /// Contains settings to verify user profile [`User`] attributes
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct UserProfileAttributes {
-    name_max_length: usize,
-    role_max_length: usize,
-    email_max_length: usize,
-    telegram_max_length: usize,
-    twitter_max_length: usize,
-    bio_max_length: usize,
-    avatar_url_max_length: usize,
+    pub name_max_length: usize,
+    pub role_max_length: usize,
+    pub email_max_length: usize,
+    pub telegram_max_length: usize,
+    pub twitter_max_length: usize,
+    pub bio_max_length: usize,
+    pub avatar_url_max_length: usize,
 }
 
 /// User profiles manager which provides read/write access to user profile data stored MongoDB
@@ -54,12 +53,15 @@ pub struct UsersManager {
 
 impl UsersManager {
     /// Constructs [`UsersManager`] with provided confuguration
-    pub async fn new(config: &AppConfig) -> anyhow::Result<Self> {
-        let mongo_client = MongoClient::new(&config.mongo).await?;
+    pub async fn new(
+        mongo_config: &MongoConfig,
+        registration_config: UserRegistrationConfig,
+    ) -> anyhow::Result<Self> {
+        let mongo_client = MongoClient::new(mongo_config).await?;
 
         Ok(Self {
             mongo_client,
-            registration_config: config.registration.clone(),
+            registration_config,
         })
     }
 

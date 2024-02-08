@@ -15,7 +15,7 @@ use serde::Deserialize;
 #[derive(Clone)]
 pub struct MongoClient {
     /// Collection being accessed by insert/update/query requests
-    collection: Collection<Document>,
+    pub collection: Collection<Document>,
     /// MongoDB query maximum timeout
     pub req_timeout: std::time::Duration,
 }
@@ -116,12 +116,30 @@ async fn initialize_collection(
         .any(|it| it.as_str() == collection_name)
     {
         db.create_collection(collection_name, None).await?;
+    }
 
+    let indexes = collection.list_index_names().await?;
+
+    if !indexes.iter().any(|index| index == "wallet_1") {
         let _ = collection
             .create_index(
                 IndexModel::builder()
                     .keys(bson::doc! {
                         "wallet": 1,
+                    })
+                    .options(Some(IndexOptions::builder().unique(true).build()))
+                    .build(),
+                None,
+            )
+            .await?;
+    }
+
+    if !indexes.iter().any(|index| index == "email_1") {
+        let _ = collection
+            .create_index(
+                IndexModel::builder()
+                    .keys(bson::doc! {
+                        "email": 1,
                     })
                     .options(Some(IndexOptions::builder().unique(true).build()))
                     .build(),

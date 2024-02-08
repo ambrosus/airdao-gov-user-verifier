@@ -44,6 +44,7 @@ name = "airdao-gov-portal-db"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "axum",
  "backtrace",
  "base64 0.21.5",
@@ -73,6 +74,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "web3",
 ]
 
 [[package]]

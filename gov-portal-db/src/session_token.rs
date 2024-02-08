@@ -7,16 +7,16 @@ use tokio::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct SessionManager {
-    config: SessionConfig,
+    pub config: SessionConfig,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct SessionConfig {
     /// Session lifetime in seconds
     #[serde(deserialize_with = "shared::utils::de_secs_duration")]
-    lifetime: Duration,
+    pub lifetime: Duration,
     /// Secret phrase used to generate and verify session JWT tokens
-    secret: String,
+    pub secret: String,
 }
 
 impl SessionManager {

@@ -16,7 +16,7 @@ tokio = { workspace = true }
 # Ethereum
 ethabi = { workspace = true }
 ethereum-types = { workspace = true }
-web3 = { version = "0.19", optional = true }
+web3 = { workspace = true, optional = true }
 jsonrpc-core = { workspace = true, optional = true }
 
 # Crypto

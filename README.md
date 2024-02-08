@@ -93,7 +93,7 @@ Supported logging levels: `info`, `debug`, `trace`. Defaults to `info` log level
 
 Integration tests will require running local hardhat node with deployed contracts.
 
-To run integration tests use `cargo test --features enable-integration-tests`
+To run integration tests use `cargo test --features enable-integration-tests -- --test-threads=1`
 
 ## Run
 
