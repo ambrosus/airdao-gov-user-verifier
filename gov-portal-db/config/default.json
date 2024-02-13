@@ -21,6 +21,11 @@
         "url": null,
         "db": "AirDAOGovPortal",
         "collection": "Users",
-        "requestTimeout": 10000
+        "requestTimeout": 10
+    },
+    "quiz": {
+        "failedQuizBlockDuration": 172800,
+        "minimumValidAnswersRequired": null,
+        "questions": null
     }
 }

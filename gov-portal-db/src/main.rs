@@ -1,5 +1,6 @@
 mod config;
 mod error;
+mod quiz;
 mod server;
 mod session_token;
 mod users_manager;

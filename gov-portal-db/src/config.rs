@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 use crate::{
+    quiz::QuizConfig,
     session_token::SessionConfig,
     users_manager::{mongo_client::MongoConfig, UserRegistrationConfig},
 };
@@ -16,4 +17,6 @@ pub struct AppConfig {
     pub registration: UserRegistrationConfig,
     /// MongoDB client configuration
     pub mongo: MongoConfig,
+    /// Quiz configuration
+    pub quiz: QuizConfig,
 }

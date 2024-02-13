@@ -2,7 +2,9 @@ use axum::{extract::State, routing::post, Json, Router};
 use chrono::Utc;
 use tower_http::cors::CorsLayer;
 
-use shared::common::{VerifyAccountRequest, VerifyAccountResponse};
+use shared::common::{
+    UserInfo, UserProfile, UserProfileStatus, VerifyAccountRequest, VerifyAccountResponse,
+};
 
 use crate::{
     config::AppConfig, error::AppError, fractal::FractalClient, signer::SbtRequestSigner,
@@ -52,16 +54,31 @@ async fn verify_endpoint(
 ) -> Result<Json<VerifyAccountResponse>, AppError> {
     tracing::debug!("Request: {req:?}");
 
-    let result = match state
-        .client
-        .fetch_and_verify_user(req.token, req.wallet)
-        .await
-    {
-        Ok(user) => create_verify_account_response(&state.signer, req.wallet, user, Utc::now()),
+    let is_oauth_token = matches!(req.token, shared::common::TokenKind::OAuth { .. });
+
+    let verified_user_res = match req.user {
+        UserProfile {
+            status: UserProfileStatus::Complete(_),
+            info: UserInfo { wallet, .. },
+        }
+        | UserProfile {
+            info: UserInfo { wallet, .. },
+            ..
+        } if is_oauth_token => state.client.fetch_and_verify_user(req.token, wallet).await,
+        _ => Err(AppError::VerificationNotAllowed),
+    };
+
+    let result = match verified_user_res {
+        Ok(verified_user) => create_verify_account_response(
+            &state.signer,
+            req.user.info.wallet,
+            verified_user,
+            Utc::now(),
+        ),
         Err(e) => {
             tracing::warn!(
                 "Failed to process verify request (wallet: {}). Error: {e}",
-                req.wallet
+                req.user.info.wallet
             );
             return Err(e);
         }

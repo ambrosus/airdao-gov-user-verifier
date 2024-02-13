@@ -2,7 +2,7 @@ pub mod error;
 pub mod mongo_client;
 
 use bson::doc;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use ethereum_types::Address;
 use futures_util::TryStreamExt;
 use mongodb::{
@@ -13,7 +13,9 @@ use mongodb::{
 use serde::Deserialize;
 use tokio::time::Duration;
 
-use shared::common::{RawUserRegistrationToken, User, UserRegistrationToken};
+use shared::common::{
+    RawUserProfile, RawUserRegistrationToken, UserInfo, UserProfile, UserRegistrationToken,
+};
 
 use mongo_client::{MongoClient, MongoConfig};
 
@@ -45,6 +47,12 @@ pub struct UserProfileAttributes {
     pub avatar_url_max_length: usize,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum QuizResult {
+    Solved,
+    Failed(DateTime<Utc>),
+}
+
 /// User profiles manager which provides read/write access to user profile data stored MongoDB
 pub struct UsersManager {
     pub mongo_client: MongoClient,
@@ -67,7 +75,7 @@ impl UsersManager {
 
     /// Registers new user by writing [`User`] struct to MongoDB, which will be uniquely indexed by EVM-like wallet address [`Address`].
     /// Input [`User`] struct is verified for correctness.
-    pub async fn register_user(&self, user: &User) -> Result<(), error::Error> {
+    pub async fn register_user(&self, user: &UserInfo) -> Result<(), error::Error> {
         self.verify_user(user)?;
 
         let user_doc = bson::to_document(&user)?;
@@ -82,7 +90,7 @@ impl UsersManager {
     }
 
     /// Searches for a user profile within MongoDB by provided EVM-like address [`Address`] and returns [`User`]
-    pub async fn get_user_by_wallet(&self, wallet: Address) -> Result<User, error::Error> {
+    pub async fn get_user_by_wallet(&self, wallet: Address) -> Result<UserProfile, error::Error> {
         let filter = doc! {
             "wallet": bson::to_bson(&wallet)?,
         };
@@ -100,23 +108,35 @@ impl UsersManager {
         })
         .await??
         .ok_or(error::Error::UserNotFound)
-        .and_then(|doc| bson::from_document::<User>(doc).map_err(error::Error::from));
+        .and_then(|doc| bson::from_document::<RawUserProfile>(doc).map_err(error::Error::from));
 
         tracing::debug!("Get user by wallet ({wallet}) result: {res:?}");
 
-        res
+        res.and_then(|raw_profile| {
+            UserProfile::new(
+                raw_profile,
+                self.registration_config.lifetime,
+                self.registration_config.secret.as_bytes(),
+            )
+            .map_err(error::Error::from)
+        })
     }
 
     /// Updates user profile stored in MongoDB by updated [`User`] struct. Input [`User`] struct is verified for correctness.
-    pub async fn update_user(&self, user: User) -> Result<(), error::Error> {
+    pub async fn update_user(&self, user: UserInfo) -> Result<(), error::Error> {
         self.verify_user(&user)?;
 
+        let wallet = user.wallet;
+
         let query = doc! {
-            "wallet": bson::to_bson(&user.wallet)?,
+            "wallet": bson::to_bson(&wallet)?,
         };
 
         let update = doc! {
-            "$set": bson::to_bson(&user)?
+            "$set": bson::to_bson(&RawUserProfile {
+                info: user,
+                ..Default::default()
+            })?
         };
 
         let options = UpdateOptions::builder().upsert(false).build();
@@ -132,7 +152,55 @@ impl UsersManager {
             Err(e) => Err(e.into()),
         };
 
-        tracing::debug!("Update user by wallet ({}) result: {res:?}", user.wallet);
+        tracing::debug!("Update user by wallet ({wallet}) result: {res:?}");
+
+        res
+    }
+
+    /// Updates user profile stored in MongoDB by updated [`User`] struct. Input [`User`] struct is verified for correctness.
+    pub async fn update_user_quiz_result(
+        &self,
+        wallet: Address,
+        quiz_result: QuizResult,
+    ) -> Result<(), error::Error> {
+        let query = doc! {
+            "wallet": bson::to_bson(&wallet)?,
+        };
+
+        let update = match quiz_result {
+            QuizResult::Solved => {
+                doc! {
+                    "$set": bson::to_bson(&RawUserProfile {
+                        quiz_solved: Some(true),
+                        ..Default::default()
+                    })?
+                }
+            }
+            QuizResult::Failed(block_until) => {
+                doc! {
+                    "$set": bson::to_bson(&RawUserProfile {
+                        quiz_solved: Some(false),
+                        blocked_until: Some(block_until.timestamp_millis() as u64),
+                        ..Default::default()
+                    })?
+                }
+            }
+        };
+
+        let options = UpdateOptions::builder().upsert(false).build();
+
+        let update_result = tokio::time::timeout(self.mongo_client.req_timeout, async {
+            self.mongo_client.update_one(query, update, options).await
+        })
+        .await?;
+
+        let res = match update_result {
+            Ok(UpdateResult { matched_count, .. }) if matched_count > 0 => Ok(()),
+            Ok(_) => Err(error::Error::UserNotFound),
+            Err(e) => Err(e.into()),
+        };
+
+        tracing::debug!("Update user by wallet ({wallet}) result: {res:?}");
 
         res
     }
@@ -163,8 +231,8 @@ impl UsersManager {
     pub fn verify_registration_token(
         &self,
         token: &UserRegistrationToken,
-    ) -> Result<User, anyhow::Error> {
-        let user = User::try_from(token.verify(self.registration_config.secret.as_bytes())?)?;
+    ) -> Result<UserInfo, anyhow::Error> {
+        let user = UserInfo::try_from(token.verify(self.registration_config.secret.as_bytes())?)?;
 
         self.verify_user(&user)?;
 
@@ -172,7 +240,7 @@ impl UsersManager {
     }
 
     /// Verifies user profile [`User`] struct fields for correctness
-    fn verify_user(&self, user: &User) -> Result<(), error::Error> {
+    fn verify_user(&self, user: &UserInfo) -> Result<(), error::Error> {
         if user.name.as_ref().is_some_and(|value| {
             value.len()
                 > self

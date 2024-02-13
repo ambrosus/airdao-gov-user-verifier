@@ -14,4 +14,6 @@ pub enum Error {
     Timeout(#[from] tokio::time::error::Elapsed),
     #[error("Invalid input: {0}")]
     InvalidInput(String),
+    #[error("Internal error: {0}")]
+    Internal(#[from] anyhow::Error),
 }

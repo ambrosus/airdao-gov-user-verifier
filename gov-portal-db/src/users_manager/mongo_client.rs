@@ -30,14 +30,14 @@ pub struct MongoConfig {
     pub db: String,
     /// MongoDB user profiles collection name
     pub collection: String,
-    /// MongoDB query maximum timeout
+    /// MongoDB query maximum timeout in seconds
     #[serde(default = "default_request_timeout")]
     pub request_timeout: u64,
 }
 
-/// Default MongoDB query maximum timeout
+/// Default MongoDB query maximum timeout in seconds
 fn default_request_timeout() -> u64 {
-    10_000
+    10
 }
 
 impl MongoClient {
@@ -64,7 +64,7 @@ impl MongoClient {
 
         Ok(Self {
             collection,
-            req_timeout: std::time::Duration::from_millis(config.request_timeout),
+            req_timeout: std::time::Duration::from_secs(config.request_timeout),
         })
     }
 

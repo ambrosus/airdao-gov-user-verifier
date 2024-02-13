@@ -15,8 +15,8 @@ use tower_http::cors::CorsLayer;
 
 use shared::{
     common::{
-        ApprovedResponse, PendingResponse, SBTRequest, SessionToken, SignedSBTRequest, User,
-        UserRegistrationToken, VerifyAccountResponse,
+        ApprovedResponse, PendingResponse, SBTRequest, SessionToken, SignedSBTRequest,
+        UserDbConfig, UserInfo, UserRegistrationToken, VerifyAccountResponse,
     },
     logger, utils,
 };
@@ -41,12 +41,6 @@ pub struct SignerConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct WebConfig {
     pub pages: HashMap<String, String>,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct UserDbConfig {
-    pub base_url: String,
 }
 
 #[derive(Clone)]
@@ -281,7 +275,7 @@ async fn update_user_route(
         .map(|content| {
             let (user, error_text) = match user {
                 Ok(user) => (user, None),
-                Err(e) => (User::default(), Some(e)),
+                Err(e) => (UserInfo::default(), Some(e)),
             };
 
             Html(
@@ -457,7 +451,7 @@ async fn register_route(
 ) -> Result<Html<String>, String> {
     let page_name = match req {
         RegisterQuery::WithJwtToken { token } => match state.register_user(&token).await {
-            Ok(User { wallet: _, .. }) => "no-session.html", // at this point we don't have session token, so user should connect wallet again
+            Ok(UserInfo { wallet: _, .. }) => "no-session.html", // at this point we don't have session token, so user should connect wallet again
             Err(e) => {
                 tracing::warn!(
                     "Failed to register user by registration token `{token}`. Error: {}",
@@ -513,7 +507,7 @@ impl AppState {
             .map_err(|_| anyhow::Error::msg(raw_data))
     }
 
-    async fn register_user(&self, token: &str) -> Result<User, anyhow::Error> {
+    async fn register_user(&self, token: &str) -> Result<UserInfo, anyhow::Error> {
         let raw_data = self
             .client
             .post(&[&self.config.user_db.base_url, "/register"].concat())
@@ -523,10 +517,10 @@ impl AppState {
             .text()
             .await?;
 
-        serde_json::from_str::<User>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
+        serde_json::from_str::<UserInfo>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
     }
 
-    async fn get_user(&self, token: &str) -> Result<User, anyhow::Error> {
+    async fn get_user(&self, token: &str) -> Result<UserInfo, anyhow::Error> {
         let raw_data = self
             .client
             .post(&[&self.config.user_db.base_url, "/user"].concat())
@@ -536,7 +530,7 @@ impl AppState {
             .text()
             .await?;
 
-        serde_json::from_str::<User>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
+        serde_json::from_str::<UserInfo>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -1,5 +1,8 @@
 {
     "listenAddress": "0.0.0.0:10000",
+    "userDb": {
+        "secret": null
+    },
     "signer": {
         "signingKey": null,
         "requestLifetime": 60000,

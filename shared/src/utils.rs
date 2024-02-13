@@ -192,6 +192,23 @@ pub fn get_checksum_address(address: &Address) -> String {
         .collect::<String>()
 }
 
+pub fn convert_to_claims_with_expiration(
+    obj: impl serde::Serialize,
+    expires_at: DateTime<Utc>,
+) -> anyhow::Result<serde_json::Value> {
+    match serde_json::to_value(&obj)? {
+        serde_json::Value::Object(m) => {
+            let mut m = m.clone();
+            m.insert(
+                "exp".to_owned(),
+                serde_json::Value::Number(expires_at.timestamp_millis().into()),
+            );
+            Ok(serde_json::Value::Object(m))
+        }
+        _ => Err(anyhow::anyhow!("Unable to serialize JWT profile token")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

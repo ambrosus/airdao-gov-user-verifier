@@ -1,19 +1,20 @@
 use base64::{engine::general_purpose, Engine};
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use ethabi::{encode, Address, ParamType, Token};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use std::time::Duration;
 
-use crate::utils::decode_sbt_request;
+use crate::utils::{convert_to_claims_with_expiration, decode_sbt_request};
 
-/// Minimum time required before oauth2 token expires in minutes
-static OAUTH_TOKEN_MINIMUM_LIFETIME: i64 = 5;
+/// Minimum time required before oauth2 token expires in seconds
+static OAUTH_TOKEN_MINIMUM_LIFETIME: u64 = 300;
 
 /// Verification request struct to check if User has approved Fractal's face verification
 /// to acquire signed SBT mint request
 #[derive(Deserialize, Debug)]
 pub struct VerifyAccountRequest {
-    /// User's wallet address
-    pub wallet: ethabi::Address,
+    /// User's profile
+    pub user: UserProfile,
     /// Fractal token's kind
     #[serde(flatten)]
     pub token: TokenKind,
@@ -60,9 +61,10 @@ pub struct SBTRequest {
     pub sbt_expires_at: u64,
 }
 
-/// User's profile struct
+/// User's profile information struct
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct User {
+#[serde(rename_all = "camelCase")]
+pub struct UserInfo {
     pub wallet: Address,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -80,7 +82,151 @@ pub struct User {
     pub avatar: Option<url::Url>,
 }
 
-impl TryFrom<RawUserRegistrationToken> for User {
+impl UserInfo {
+    pub fn is_profile_finished(&self) -> bool {
+        self.email.is_some() && self.role.is_some() && self.bio.is_some()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UserProfile {
+    /// User's public profile information    
+    pub info: UserInfo,
+    #[serde(flatten)]
+    pub status: UserProfileStatus,
+}
+
+#[derive(Deserialize, Serialize, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RawUserProfile {
+    /// Quiz questionnaire solve result
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quiz_solved: Option<bool>,
+    /// Timestamp in millis till user profile is blocked
+    ///
+    /// Do not allows users to solve quiz and continue with Fractal face verification
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_until: Option<u64>,
+    /// Users profile information
+    #[serde(flatten)]
+    pub info: UserInfo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum UserProfileStatus {
+    /// Profile is blocked (until timestamp in millis) to be verified by face via Fractal
+    Blocked {
+        #[serde(rename = "blockedUntil")]
+        blocked_until: u64,
+    },
+    Incomplete {
+        /// Indicates if user solved a Quiz questionnaire
+        #[serde(rename = "quizSolved")]
+        quiz_solved: bool,
+        /// Indicates if profile has all mandatory information filled
+        #[serde(rename = "finishedProfile")]
+        finished_profile: bool,
+    },
+    /// Profile is complete and ready to be verified by Fractal
+    Complete(CompletionToken),
+}
+
+/// Profile completion JWT token for an access to Fractal user verification
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CompletionToken {
+    pub token: String,
+}
+
+impl From<String> for CompletionToken {
+    fn from(token: String) -> Self {
+        Self { token }
+    }
+}
+
+impl From<&str> for CompletionToken {
+    fn from(token: &str) -> Self {
+        Self {
+            token: token.to_owned(),
+        }
+    }
+}
+
+impl Default for UserProfileStatus {
+    fn default() -> Self {
+        Self::Incomplete {
+            quiz_solved: false,
+            finished_profile: false,
+        }
+    }
+}
+
+impl UserProfile {
+    pub fn new(
+        raw_profile: RawUserProfile,
+        lifetime: Duration,
+        secret: &[u8],
+    ) -> anyhow::Result<Self> {
+        let finished_profile = raw_profile.info.is_profile_finished();
+
+        match raw_profile {
+            RawUserProfile {
+                blocked_until: Some(ts),
+                info,
+                ..
+            } if ts > Utc::now().timestamp_millis() as u64 => Ok(Self {
+                info,
+                status: UserProfileStatus::Blocked { blocked_until: ts },
+            }),
+            RawUserProfile {
+                quiz_solved: Some(true),
+                info,
+                ..
+            } if finished_profile => {
+                let claims = convert_to_claims_with_expiration(&info, Utc::now() + lifetime)?;
+
+                let status = jsonwebtoken::encode(
+                    &jsonwebtoken::Header::default(),
+                    &claims,
+                    &jsonwebtoken::EncodingKey::from_secret(secret),
+                )
+                .map_err(anyhow::Error::from)
+                .map(|token| UserProfileStatus::Complete(token.into()))?;
+
+                Ok(Self { info, status })
+            }
+            RawUserProfile {
+                quiz_solved: Some(false) | None,
+                info,
+                ..
+            } => Ok(Self {
+                info,
+                status: UserProfileStatus::Incomplete {
+                    quiz_solved: false,
+                    finished_profile,
+                },
+            }),
+            RawUserProfile {
+                quiz_solved: Some(true),
+                info,
+                ..
+            } => Ok(Self {
+                info,
+                status: UserProfileStatus::Incomplete {
+                    quiz_solved: true,
+                    finished_profile,
+                },
+            }),
+        }
+    }
+
+    pub fn is_verification_blocked(&self) -> bool {
+        matches!(self.status, UserProfileStatus::Blocked { blocked_until } if blocked_until > Utc::now().timestamp_millis() as u64)
+    }
+}
+
+impl TryFrom<RawUserRegistrationToken> for UserInfo {
     type Error = anyhow::Error;
 
     fn try_from(token: RawUserRegistrationToken) -> Result<Self, Self::Error> {
@@ -264,7 +410,7 @@ impl TokenLifetime {
 impl OAuthToken {
     /// Returns if Fractal OAuth token requires to be refreshed
     pub fn requires_refresh(&self) -> bool {
-        Utc::now() + Duration::minutes(OAUTH_TOKEN_MINIMUM_LIFETIME) >= self.expires_at
+        Utc::now() + Duration::from_secs(OAUTH_TOKEN_MINIMUM_LIFETIME) >= self.expires_at
     }
 }
 
@@ -322,5 +468,119 @@ impl UserRegistrationToken {
         } else {
             Ok(token_data.claims)
         }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UserDbConfig {
+    pub base_url: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::common::CompletionToken;
+
+    use super::{RawUserProfile, UserProfile, UserProfileStatus};
+
+    #[test]
+    fn test_de_raw_user_profile() {
+        serde_json::from_str::<RawUserProfile>(
+            r#"
+          {
+            "quizSolved": true,
+            "wallet": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+            "name": "test user name",
+            "role": "test role",
+            "email": "test@test.com",
+            "telegram": "@telegram",
+            "twitter": "@twitter",
+            "bio": "some test bio",
+            "avatar": "http://test.com"
+          }
+        "#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_de_user_profile() {
+        assert_matches::assert_matches!(
+            serde_json::from_str::<UserProfile>(
+                r#"
+                    {
+                        "info": {
+                            "wallet": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+                            "name": "test user name",
+                            "role": "test role",
+                            "email": "test@test.com",
+                            "telegram": "@telegram",
+                            "twitter": "@twitter",
+                            "bio": "some test bio",
+                            "avatar": "http://test.com"    
+                        },
+                        "blockedUntil": 100000
+                    }
+                "#
+            ),
+            Ok(UserProfile {
+                status: UserProfileStatus::Blocked {
+                    blocked_until: 100000
+                },
+                ..
+            })
+        );
+
+        assert_matches::assert_matches!(
+            serde_json::from_str::<UserProfile>(
+                r#"
+                    {
+                        "info": {
+                            "wallet": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+                            "name": "test user name",
+                            "role": "test role",
+                            "email": "test@test.com",
+                            "telegram": "@telegram",
+                            "twitter": "@twitter",
+                            "bio": "some test bio",
+                            "avatar": "http://test.com"    
+                        },
+                        "quizSolved": false,
+                        "finishedProfile": false
+                    }
+                "#
+            ),
+            Ok(UserProfile {
+                status: UserProfileStatus::Incomplete {
+                    quiz_solved: false,
+                    finished_profile: false,
+                },
+                ..
+            })
+        );
+
+        assert_matches::assert_matches!(
+            serde_json::from_str::<UserProfile>(
+                r#"
+                    {
+                        "info": {
+                            "wallet": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+                            "name": "test user name",
+                            "role": "test role",
+                            "email": "test@test.com",
+                            "telegram": "@telegram",
+                            "twitter": "@twitter",
+                            "bio": "some test bio",
+                            "avatar": "http://test.com"    
+                        },
+                        "token": "some_verification_token"
+                    }
+                "#
+            ),
+            Ok(UserProfile {
+                status: UserProfileStatus::Complete(CompletionToken { token }),
+                ..
+            }) if token.as_str() == "some_verification_token"
+        );
     }
 }

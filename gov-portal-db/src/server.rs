@@ -1,13 +1,20 @@
 use axum::{extract::State, routing::post, Json, Router};
+use chrono::Utc;
 use ethereum_types::Address;
 use serde::Deserialize;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
-use shared::common::{SessionToken, User, UserRegistrationToken};
+use shared::common::{
+    SessionToken, UserInfo, UserProfile, UserProfileStatus, UserRegistrationToken,
+};
 
 use crate::{
-    config::AppConfig, error::AppError, session_token::SessionManager, users_manager::UsersManager,
+    config::AppConfig,
+    error::AppError,
+    quiz::{Quiz, QuizAnswer, QuizQuestion},
+    session_token::SessionManager,
+    users_manager::UsersManager,
 };
 
 /// State shared between route handlers
@@ -16,6 +23,7 @@ pub struct AppState {
     pub config: AppConfig,
     pub session_manager: SessionManager,
     pub users_manager: Arc<UsersManager>,
+    pub quiz: Quiz,
 }
 
 impl AppState {
@@ -24,6 +32,9 @@ impl AppState {
         users_manager: Arc<UsersManager>,
     ) -> Result<Self, AppError> {
         Ok(Self {
+            quiz: Quiz {
+                config: config.quiz.clone(),
+            },
             session_manager: SessionManager::new(config.session.clone()),
             users_manager,
             config,
@@ -37,6 +48,15 @@ impl AppState {
 pub enum TokenQuery {
     Message { data: String },
     NoMessage {},
+}
+
+/// JSON-serialized request passed as POST-data to `/quiz` endpoint and contains quiz answers
+/// which should be verified and then updates User's profile in MongoDB
+#[derive(Debug, Deserialize)]
+pub struct VerifyQuizRequest {
+    pub answers: Vec<QuizAnswer>,
+    #[serde(flatten)]
+    pub session: SessionToken,
 }
 
 /// JSON-serialized request passed as POST-data to `/update-user` endpoint and contains User's profile
@@ -80,6 +100,8 @@ pub async fn start(config: AppConfig, users_manager: Arc<UsersManager>) -> Resul
         .route("/user", post(user_route))
         .route("/update-user", post(update_user_route))
         .route("/verify-email", post(verify_email_route))
+        .route("/quiz", post(quiz_route))
+        .route("/verify-quiz", post(verify_quiz_route))
         .route("/register", post(register_route))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -115,7 +137,7 @@ async fn token_route(
 async fn user_route(
     State(state): State<AppState>,
     Json(token): Json<SessionToken>,
-) -> Result<Json<User>, String> {
+) -> Result<Json<UserProfile>, String> {
     tracing::debug!("[/user] Request {token:?}");
 
     let res = match state.session_manager.verify_token(&token) {
@@ -129,6 +151,72 @@ async fn user_route(
     };
 
     tracing::debug!("[/user] Response {res:?}");
+
+    res.map(Json)
+}
+
+/// Route handler to request quiz questions
+async fn quiz_route(
+    State(state): State<AppState>,
+    Json(session): Json<SessionToken>,
+) -> Result<Json<Vec<QuizQuestion>>, String> {
+    tracing::debug!("[/quiz] Request {:?}", session);
+
+    let res = match state.session_manager.verify_token(&session) {
+        Ok(_) => Ok(state.quiz.config.questions),
+        Err(e) => Err(format!("Quiz request failure. Error: {e}")),
+    };
+
+    tracing::debug!("[/quiz] Response {res:?}");
+
+    res.map(Json)
+}
+
+/// Route handler to provide & verify quiz answers for User's profile
+async fn verify_quiz_route(
+    State(state): State<AppState>,
+    Json(quiz_req): Json<VerifyQuizRequest>,
+) -> Result<Json<()>, String> {
+    tracing::debug!("[/verify-quiz] Request {:?}", quiz_req);
+
+    let user_res = match state.session_manager.verify_token(&quiz_req.session) {
+        Ok(wallet) => state
+            .users_manager
+            .get_user_by_wallet(wallet)
+            .await
+            .map_err(anyhow::Error::from),
+        Err(e) => Err(anyhow::anyhow!("Verify quiz request failure. Error: {e}")),
+    };
+
+    let res = match user_res {
+        // Do not need to verify quiz if already solved
+        Ok(UserProfile {
+            status:
+                UserProfileStatus::Incomplete {
+                    quiz_solved: true, ..
+                }
+                | UserProfileStatus::Complete(_),
+            ..
+        }) => Ok(()),
+        // Do not allow to solve quiz if temporarily blocked
+        Ok(UserProfile {
+            status: UserProfileStatus::Blocked { blocked_until },
+            ..
+        }) if blocked_until > Utc::now().timestamp_millis() as u64 => {
+            Err("User is temporarily blocked!".to_string())
+        }
+        Ok(user) => state
+            .users_manager
+            .update_user_quiz_result(
+                user.info.wallet,
+                state.quiz.verify_answers(quiz_req.answers),
+            )
+            .await
+            .map_err(|e| format!("Update user profile with quiz results failure. Error: {e}")),
+        Err(e) => Err(format!("Verify quiz request failure. Error: {e}")),
+    };
+
+    tracing::debug!("[/verify-quiz] Response {res:?}");
 
     res.map(Json)
 }
@@ -182,7 +270,7 @@ async fn verify_email_route(
 async fn register_route(
     State(state): State<AppState>,
     Json(reg_token): Json<UserRegistrationToken>,
-) -> Result<Json<User>, String> {
+) -> Result<Json<UserInfo>, String> {
     tracing::debug!("[/register] Request {reg_token:?}");
 
     // TODO: fetch user information from MongoDB
@@ -205,8 +293,8 @@ async fn register_route(
 }
 
 impl UpdateUserRequest {
-    fn into_user(self, wallet: Address) -> User {
-        User {
+    fn into_user(self, wallet: Address) -> UserInfo {
+        UserInfo {
             wallet,
             name: self.name,
             role: self.role,
