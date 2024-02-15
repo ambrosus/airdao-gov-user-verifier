@@ -84,7 +84,11 @@ pub struct UserInfo {
 
 impl UserInfo {
     pub fn is_profile_finished(&self) -> bool {
-        self.email.is_some() && self.role.is_some() && self.bio.is_some()
+        self.email.is_some()
+            && self.name.is_some()
+            && self.role.is_some()
+            && self.bio.is_some()
+            && self.avatar.is_some()
     }
 }
 

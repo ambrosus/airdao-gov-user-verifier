@@ -1,4 +1,6 @@
 #![cfg(feature = "enable-integration-tests")]
+use std::str::FromStr;
+
 use airdao_gov_portal_db::{
     quiz::{Quiz, QuizAnswer, QuizConfig},
     users_manager::*,
@@ -185,8 +187,10 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
     users_manager
         .update_user(UserInfo {
             wallet: addr_1,
+            name: Some("some name".to_owned()),
             role: Some("some role".to_owned()),
             bio: Some("some bio".to_owned()),
+            avatar: Some(url::Url::from_str("http://avatar.link")?),
             ..Default::default()
         })
         .await?;
