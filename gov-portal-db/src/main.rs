@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = utils::load_config::<config::AppConfig>("./gov-portal-db").await?;
 
     let users_manager =
-        Arc::new(UsersManager::new(&config.mongo, config.registration.clone()).await?);
+        Arc::new(UsersManager::new(&config.mongo, config.users_manager.clone()).await?);
 
     server::start(config, users_manager.clone()).await?;
 

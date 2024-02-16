@@ -24,11 +24,11 @@ const MONGO_DUPLICATION_ERROR: i32 = 11000;
 /// Users manager's [`UsersManager`] settings for JWT registration token and user profile attributes verification
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct UserRegistrationConfig {
-    /// Lifetime for which JWT registration token will be valid to register new user profile
+pub struct UsersManagerConfig {
+    /// Lifetime for which user verification JWT token will be valid
     #[serde(deserialize_with = "shared::utils::de_secs_duration")]
     pub lifetime: Duration,
-    /// Secret being used to sign JWT registration token
+    /// Secret being used to create user verification JWT token
     pub secret: String,
     /// User profile attributes verification settings
     pub user_profile_attributes: UserProfileAttributes,
@@ -56,20 +56,20 @@ pub enum QuizResult {
 /// User profiles manager which provides read/write access to user profile data stored MongoDB
 pub struct UsersManager {
     pub mongo_client: MongoClient,
-    pub registration_config: UserRegistrationConfig,
+    pub config: UsersManagerConfig,
 }
 
 impl UsersManager {
     /// Constructs [`UsersManager`] with provided confuguration
     pub async fn new(
         mongo_config: &MongoConfig,
-        registration_config: UserRegistrationConfig,
+        config: UsersManagerConfig,
     ) -> anyhow::Result<Self> {
         let mongo_client = MongoClient::new(mongo_config).await?;
 
         Ok(Self {
             mongo_client,
-            registration_config,
+            config,
         })
     }
 
@@ -115,8 +115,8 @@ impl UsersManager {
         res.and_then(|raw_profile| {
             UserProfile::new(
                 raw_profile,
-                self.registration_config.lifetime,
-                self.registration_config.secret.as_bytes(),
+                Utc::now() + self.config.lifetime,
+                self.config.secret.as_bytes(),
             )
             .map_err(error::Error::from)
         })
@@ -218,10 +218,9 @@ impl UsersManager {
             RawUserRegistrationToken {
                 checksum_wallet: shared::utils::get_checksum_address(&wallet),
                 email,
-                expires_at: (Utc::now() + self.registration_config.lifetime).timestamp_millis()
-                    as u64,
+                expires_at: (Utc::now() + self.config.lifetime).timestamp_millis() as u64,
             },
-            self.registration_config.secret.as_bytes(),
+            self.config.secret.as_bytes(),
         )
         .map_err(|e| anyhow::Error::msg(format!("Failed to generate JWT token. Error: {}", e)))
     }
@@ -232,7 +231,7 @@ impl UsersManager {
         &self,
         token: &UserRegistrationToken,
     ) -> Result<UserInfo, anyhow::Error> {
-        let user = UserInfo::try_from(token.verify(self.registration_config.secret.as_bytes())?)?;
+        let user = UserInfo::try_from(token.verify(self.config.secret.as_bytes())?)?;
 
         self.verify_user(&user)?;
 
@@ -241,108 +240,72 @@ impl UsersManager {
 
     /// Verifies user profile [`User`] struct fields for correctness
     fn verify_user(&self, user: &UserInfo) -> Result<(), error::Error> {
-        if user.name.as_ref().is_some_and(|value| {
-            value.len()
-                > self
-                    .registration_config
-                    .user_profile_attributes
-                    .name_max_length
-        }) {
+        if user
+            .name
+            .as_ref()
+            .is_some_and(|value| value.len() > self.config.user_profile_attributes.name_max_length)
+        {
             return Err(error::Error::InvalidInput(format!(
                 "Name too long (max: {})",
-                self.registration_config
-                    .user_profile_attributes
-                    .name_max_length
+                self.config.user_profile_attributes.name_max_length
             )));
         }
 
-        if user.role.as_ref().is_some_and(|value| {
-            value.len()
-                > self
-                    .registration_config
-                    .user_profile_attributes
-                    .role_max_length
-        }) {
+        if user
+            .role
+            .as_ref()
+            .is_some_and(|value| value.len() > self.config.user_profile_attributes.role_max_length)
+        {
             return Err(error::Error::InvalidInput(format!(
                 "Role too long (max: {})",
-                self.registration_config
-                    .user_profile_attributes
-                    .role_max_length
+                self.config.user_profile_attributes.role_max_length
             )));
         }
 
         if user.email.as_ref().is_some_and(|value| {
-            value.as_str().len()
-                > self
-                    .registration_config
-                    .user_profile_attributes
-                    .email_max_length
+            value.as_str().len() > self.config.user_profile_attributes.email_max_length
         }) {
             return Err(error::Error::InvalidInput(format!(
                 "Email too long (max: {})",
-                self.registration_config
-                    .user_profile_attributes
-                    .email_max_length
+                self.config.user_profile_attributes.email_max_length
             )));
         }
 
         if user.telegram.as_ref().is_some_and(|value| {
-            value.len()
-                > self
-                    .registration_config
-                    .user_profile_attributes
-                    .telegram_max_length
+            value.len() > self.config.user_profile_attributes.telegram_max_length
         }) {
             return Err(error::Error::InvalidInput(format!(
                 "Telegram handle too long (max: {})",
-                self.registration_config
-                    .user_profile_attributes
-                    .telegram_max_length
+                self.config.user_profile_attributes.telegram_max_length
             )));
         }
 
         if user.twitter.as_ref().is_some_and(|value| {
-            value.len()
-                > self
-                    .registration_config
-                    .user_profile_attributes
-                    .twitter_max_length
+            value.len() > self.config.user_profile_attributes.twitter_max_length
         }) {
             return Err(error::Error::InvalidInput(format!(
                 "Twitter identifier too long (max: {})",
-                self.registration_config
-                    .user_profile_attributes
-                    .twitter_max_length
+                self.config.user_profile_attributes.twitter_max_length
             )));
         }
 
-        if user.bio.as_ref().is_some_and(|value| {
-            value.len()
-                > self
-                    .registration_config
-                    .user_profile_attributes
-                    .bio_max_length
-        }) {
+        if user
+            .bio
+            .as_ref()
+            .is_some_and(|value| value.len() > self.config.user_profile_attributes.bio_max_length)
+        {
             return Err(error::Error::InvalidInput(format!(
                 "Bio too long (max: {})",
-                self.registration_config
-                    .user_profile_attributes
-                    .bio_max_length
+                self.config.user_profile_attributes.bio_max_length
             )));
         }
 
         if user.avatar.as_ref().is_some_and(|value| {
-            value.as_str().len()
-                > self
-                    .registration_config
-                    .user_profile_attributes
-                    .avatar_url_max_length
+            value.as_str().len() > self.config.user_profile_attributes.avatar_url_max_length
         }) {
             return Err(error::Error::InvalidInput(format!(
                 "Avatar URL too long (max: {})",
-                self.registration_config
-                    .user_profile_attributes
-                    .avatar_url_max_length
+                self.config.user_profile_attributes.avatar_url_max_length
             )));
         }
 
@@ -363,11 +326,11 @@ fn is_key_duplication_error(error_kind: &MongoErrorKind) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::UserRegistrationConfig;
+    use super::UsersManagerConfig;
 
     #[test]
     fn test_user_registration_config() {
-        serde_json::from_str::<UserRegistrationConfig>(
+        serde_json::from_str::<UsersManagerConfig>(
             r#"
             {
                 "secret": "some_secret",

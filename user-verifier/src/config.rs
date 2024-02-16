@@ -8,4 +8,5 @@ pub struct AppConfig {
     pub listen_address: String,
     pub fractal: FractalConfig,
     pub signer: SignerConfig,
+    pub users_manager_secret: String,
 }

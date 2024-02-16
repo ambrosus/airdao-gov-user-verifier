@@ -169,7 +169,7 @@ impl Default for UserProfileStatus {
 impl UserProfile {
     pub fn new(
         raw_profile: RawUserProfile,
-        lifetime: Duration,
+        expires_at: DateTime<Utc>,
         secret: &[u8],
     ) -> anyhow::Result<Self> {
         let finished_profile = raw_profile.info.is_profile_finished();
@@ -188,7 +188,7 @@ impl UserProfile {
                 info,
                 ..
             } if finished_profile => {
-                let claims = convert_to_claims_with_expiration(&info, Utc::now() + lifetime)?;
+                let claims = convert_to_claims_with_expiration(&info, expires_at)?;
 
                 let status = jsonwebtoken::encode(
                     &jsonwebtoken::Header::default(),
@@ -227,6 +227,27 @@ impl UserProfile {
 
     pub fn is_verification_blocked(&self) -> bool {
         matches!(self.status, UserProfileStatus::Blocked { blocked_until } if blocked_until > Utc::now().timestamp_millis() as u64)
+    }
+
+    pub fn is_complete(&self, secret: &[u8]) -> bool {
+        // Check if user profile status is complete
+        if let UserProfileStatus::Complete(CompletionToken { token }) = &self.status {
+            let validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::default());
+
+            // User profile verification JWT token check
+            let Ok(token_data) = jsonwebtoken::decode::<UserInfo>(
+                token,
+                &jsonwebtoken::DecodingKey::from_secret(secret),
+                &validation,
+            ) else {
+                return false;
+            };
+
+            // Check that user profile verification token corresponds to the same wallet
+            token_data.claims.wallet == self.info.wallet
+        } else {
+            false
+        }
     }
 }
 
@@ -483,9 +504,14 @@ pub struct UserDbConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::CompletionToken;
+    use std::{str::FromStr, time::Duration};
+
+    use chrono::Utc;
+    use ethereum_types::Address;
+    use serde_email::Email;
 
     use super::{RawUserProfile, UserProfile, UserProfileStatus};
+    use crate::common::{CompletionToken, UserInfo};
 
     #[test]
     fn test_de_raw_user_profile() {
@@ -586,5 +612,189 @@ mod tests {
                 ..
             }) if token.as_str() == "some_verification_token"
         );
+    }
+
+    #[test]
+    fn test_user_profile_completion() {
+        struct TestCase {
+            title: &'static str,
+            input: UserProfile,
+            expected: bool,
+        }
+
+        let test_cases = [
+            TestCase {
+                title: "User profile is completed",
+                input: UserProfile::new(
+                    RawUserProfile {
+                        quiz_solved: Some(true),
+                        blocked_until: None,
+                        info: default_user_info(),
+                    },
+                    Utc::now() + Duration::from_secs(300),
+                    "test".as_bytes(),
+                )
+                .unwrap(),
+                expected: true,
+            },
+            TestCase {
+                title: "User profile is not completed (missed bio)",
+                input: UserProfile::new(
+                    RawUserProfile {
+                        quiz_solved: Some(true),
+                        blocked_until: None,
+                        info: UserInfo {
+                            bio: None,
+                            ..default_user_info()
+                        },
+                    },
+                    Utc::now() + Duration::from_secs(300),
+                    "test".as_bytes(),
+                )
+                .unwrap(),
+                expected: false,
+            },
+            TestCase {
+                title: "User profile is not completed (missed name)",
+                input: UserProfile::new(
+                    RawUserProfile {
+                        quiz_solved: Some(true),
+                        blocked_until: None,
+                        info: UserInfo {
+                            name: None,
+                            ..default_user_info()
+                        },
+                    },
+                    Utc::now() + Duration::from_secs(300),
+                    "test".as_bytes(),
+                )
+                .unwrap(),
+                expected: false,
+            },
+            TestCase {
+                title: "User profile is not completed (missed role)",
+                input: UserProfile::new(
+                    RawUserProfile {
+                        quiz_solved: Some(true),
+                        blocked_until: None,
+                        info: UserInfo {
+                            role: None,
+                            ..default_user_info()
+                        },
+                    },
+                    Utc::now() + Duration::from_secs(300),
+                    "test".as_bytes(),
+                )
+                .unwrap(),
+                expected: false,
+            },
+            TestCase {
+                title: "User profile is not completed (missed avatar)",
+                input: UserProfile::new(
+                    RawUserProfile {
+                        quiz_solved: Some(true),
+                        blocked_until: None,
+                        info: UserInfo {
+                            avatar: None,
+                            ..default_user_info()
+                        },
+                    },
+                    Utc::now() + Duration::from_secs(300),
+                    "test".as_bytes(),
+                )
+                .unwrap(),
+                expected: false,
+            },
+            TestCase {
+                title: "User profile is not completed (quiz not solved)",
+                input: UserProfile::new(
+                    RawUserProfile {
+                        quiz_solved: Some(false),
+                        blocked_until: None,
+                        info: default_user_info(),
+                    },
+                    Utc::now() + Duration::from_secs(300),
+                    "test".as_bytes(),
+                )
+                .unwrap(),
+                expected: false,
+            },
+            TestCase {
+                title: "User profile is not completed (blocked)",
+                input: UserProfile::new(
+                    RawUserProfile {
+                        quiz_solved: Some(true),
+                        blocked_until: Some(
+                            (Utc::now() + Duration::from_secs(300)).timestamp_millis() as u64,
+                        ),
+                        info: UserInfo {
+                            bio: None,
+                            ..default_user_info()
+                        },
+                    },
+                    Utc::now() + Duration::from_secs(300),
+                    "test".as_bytes(),
+                )
+                .unwrap(),
+                expected: false,
+            },
+            TestCase {
+                title: "User profile is not completed (invalid secret)",
+                input: UserProfile::new(
+                    RawUserProfile {
+                        quiz_solved: Some(true),
+                        blocked_until: None,
+                        info: default_user_info(),
+                    },
+                    Utc::now() + Duration::from_secs(300),
+                    "unknown_secret".as_bytes(),
+                )
+                .unwrap(),
+                expected: false,
+            },
+            TestCase {
+                title: "User profile is not completed (expired token)",
+                input: UserProfile::new(
+                    RawUserProfile {
+                        quiz_solved: Some(true),
+                        blocked_until: None,
+                        info: default_user_info(),
+                    },
+                    Utc::now() - Duration::from_secs(300),
+                    "test".as_bytes(),
+                )
+                .unwrap(),
+                expected: false,
+            },
+        ];
+
+        for (
+            i,
+            TestCase {
+                title,
+                input,
+                expected,
+            },
+        ) in test_cases.into_iter().enumerate()
+        {
+            assert_eq!(
+                input.is_complete("test".as_bytes()),
+                expected,
+                "Test case #{i} '{title}' failed!"
+            );
+        }
+    }
+
+    fn default_user_info() -> UserInfo {
+        UserInfo {
+            wallet: Address::from_low_u64_le(0),
+            name: Some("test".to_owned()),
+            role: Some("test".to_owned()),
+            email: Some(Email::from_str("test@test.com").unwrap()),
+            telegram: None,
+            twitter: None,
+            bio: Some("test bio".to_owned()),
+            avatar: Some(url::Url::from_str("http://test.com").unwrap()),
+        }
     }
 }

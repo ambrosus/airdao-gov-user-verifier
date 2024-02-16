@@ -4,7 +4,7 @@
         "secret": null,
         "lifetime": 86400
     },
-    "registration": {
+    "usersManager": {
         "secret": null,
         "lifetime": 600,
         "userProfileAttributes": {
@@ -24,8 +24,17 @@
         "requestTimeout": 10
     },
     "quiz": {
+        "secret": null,
+        "timeToSolve": 300,
         "failedQuizBlockDuration": 172800,
-        "minimumValidAnswersRequired": null,
+        "numberOfQuizQuestionsShown": {
+            "easy": null,
+            "moderate": null
+        },
+        "minimumValidAnswersRequired": {
+            "easy": null,
+            "moderate": null
+        },
         "questions": null
     }
 }

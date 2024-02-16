@@ -3,7 +3,7 @@ use serde::Deserialize;
 use crate::{
     quiz::QuizConfig,
     session_token::SessionConfig,
-    users_manager::{mongo_client::MongoConfig, UserRegistrationConfig},
+    users_manager::{mongo_client::MongoConfig, UsersManagerConfig},
 };
 
 #[derive(Deserialize, Debug, Clone)]
@@ -14,7 +14,7 @@ pub struct AppConfig {
     /// Session tokens configuration to allow access to database
     pub session: SessionConfig,
     /// User registration configuration
-    pub registration: UserRegistrationConfig,
+    pub users_manager: UsersManagerConfig,
     /// MongoDB client configuration
     pub mongo: MongoConfig,
     /// Quiz configuration

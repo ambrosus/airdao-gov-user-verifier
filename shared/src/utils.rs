@@ -201,7 +201,7 @@ pub fn convert_to_claims_with_expiration(
             let mut m = m.clone();
             m.insert(
                 "exp".to_owned(),
-                serde_json::Value::Number(expires_at.timestamp_millis().into()),
+                serde_json::Value::Number(expires_at.timestamp().into()),
             );
             Ok(serde_json::Value::Object(m))
         }

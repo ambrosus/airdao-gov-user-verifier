@@ -18,7 +18,7 @@ async fn test_register_user() -> Result<(), anyhow::Error> {
         request_timeout: 10,
     };
 
-    let registration_config = UserRegistrationConfig {
+    let registration_config = UsersManagerConfig {
         secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
         lifetime: std::time::Duration::from_secs(600),
         user_profile_attributes: UserProfileAttributes {
@@ -79,11 +79,21 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
     let quiz_config = serde_json::from_str::<QuizConfig>(
         r#"
         {
+            "secret": "IntegrationTestQuizSecretForJWT",
+            "numberOfQuizQuestionsShown": {
+                "easy": 2,
+                "moderate": 1
+            },
+            "minimumValidAnswersRequired": {
+                "easy": 1,
+                "moderate": 1
+            },
+            "timeToSolve": 300,
             "failedQuizBlockDuration": 172800,
-            "minimumValidAnswersRequired": 1,
             "questions": [
                 {
                     "title": "Question 1",
+                    "difficulty": "easy",
                     "variants": [
                         ["some invalid answer 1", false],
                         ["some invalid answer 2", false],
@@ -93,6 +103,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
                 },
                 {
                     "title": "Question 2",
+                    "difficulty": "moderate",
                     "variants": [
                         ["some invalid answer 1", false],
                         ["some invalid answer 2", false],
@@ -117,7 +128,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
         request_timeout: 10,
     };
 
-    let registration_config = UserRegistrationConfig {
+    let registration_config = UsersManagerConfig {
         secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
         lifetime: std::time::Duration::from_secs(600),
         user_profile_attributes: UserProfileAttributes {
