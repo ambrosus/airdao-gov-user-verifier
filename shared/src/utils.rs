@@ -7,8 +7,7 @@ use k256::{ecdsa::RecoveryId, elliptic_curve::scalar::ScalarPrimitive, Secp256k1
 use log::error;
 use serde::de::{self, Deserialize, DeserializeOwned};
 use sha3::{Digest, Keccak256};
-use std::{panic, path::PathBuf, thread};
-use tokio::time::Duration;
+use std::{panic, path::PathBuf, thread, time::Duration};
 
 use crate::common::{SBTRequest, WalletSignedMessage};
 
@@ -60,7 +59,7 @@ pub fn set_heavy_panic() {
     }));
 }
 
-/// Deserialize seconds into [`tokio::time::Duration`]
+/// Deserialize seconds into [`std::time::Duration`]
 pub fn de_secs_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where
     D: de::Deserializer<'de>,
