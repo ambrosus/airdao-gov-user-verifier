@@ -19,6 +19,7 @@ pub struct QuizConfig {
     #[serde(deserialize_with = "shared::utils::de_secs_duration")]
     pub failed_quiz_block_duration: Duration,
     pub number_of_quiz_questions_shown: HashMap<QuizQuestionDifficultyLevel, u64>,
+    pub minimum_total_valid_answers_required: u64,
     pub minimum_valid_answers_required: HashMap<QuizQuestionDifficultyLevel, u64>,
     pub questions: Vec<QuizQuestion>,
 }
@@ -156,13 +157,16 @@ impl Quiz {
             }
         }
 
-        if easy_valid_answers
-            >= self
-                .config
-                .minimum_valid_answers_required
-                .get(&QuizQuestionDifficultyLevel::Easy)
-                .cloned()
-                .unwrap_or_default()
+        let total_valid_answers = easy_valid_answers + moderate_valid_answers;
+
+        if total_valid_answers >= self.config.minimum_total_valid_answers_required
+            && easy_valid_answers
+                >= self
+                    .config
+                    .minimum_valid_answers_required
+                    .get(&QuizQuestionDifficultyLevel::Easy)
+                    .cloned()
+                    .unwrap_or_default()
             && moderate_valid_answers
                 >= self
                     .config
@@ -193,6 +197,7 @@ mod tests {
                 "easy": 2,
                 "moderate": 1
             },
+            "minimumTotalValidAnswersRequired": 2,
             "minimumValidAnswersRequired": {
                 "easy": 1,
                 "moderate": 1
@@ -256,6 +261,7 @@ mod tests {
                 "easy": 2,
                 "moderate": 1
             },
+            "minimumTotalValidAnswersRequired": 2,
             "minimumValidAnswersRequired": {
                 "easy": 1,
                 "moderate": 1
@@ -391,6 +397,7 @@ mod tests {
                 "easy": 2,
                 "moderate": 1
             },
+            "minimumTotalValidAnswersRequired": 2,
             "minimumValidAnswersRequired": {
                 "easy": 1,
                 "moderate": 1

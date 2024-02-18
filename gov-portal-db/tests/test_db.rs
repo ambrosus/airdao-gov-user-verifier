@@ -84,6 +84,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
                 "easy": 2,
                 "moderate": 1
             },
+            "minimumTotalValidAnswersRequired": 2,
             "minimumValidAnswersRequired": {
                 "easy": 1,
                 "moderate": 1
