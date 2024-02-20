@@ -200,7 +200,7 @@ async fn verify_quiz_route(
     tracing::debug!("[/verify-quiz] Request {:?}", quiz_req);
 
     let token_res = match &quiz_req {
-        req if req.verify(state.config.users_manager.secret.as_bytes()) => {
+        req if req.verify(state.config.quiz.secret.as_bytes()) => {
             state.session_manager.verify_token(&quiz_req.session)
         }
         _ => Err(anyhow::anyhow!("Invalid quiz token")),
