@@ -9,12 +9,17 @@
         "lifetime": 600,
         "userProfileAttributes": {
             "nameMaxLength": 64,
+            "nameMinLength": 2,
             "roleMaxLength": 50,
+            "roleMinLength": 2,
             "emailMaxLength": 64,
+            "emailMinLength": 5,
             "telegramMaxLength": 32,
             "twitterMaxLength": 32,
             "bioMaxLength": 250,
-            "avatarUrlMaxLength": 250
+            "bioMinLength": 2,
+            "avatarUrlMaxLength": 250,
+            "avatarUrlMinLength": 7
         }
     },
     "mongo": {

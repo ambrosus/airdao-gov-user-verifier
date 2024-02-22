@@ -21,15 +21,7 @@ async fn test_register_user() -> Result<(), anyhow::Error> {
     let registration_config = UsersManagerConfig {
         secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
         lifetime: std::time::Duration::from_secs(600),
-        user_profile_attributes: UserProfileAttributes {
-            name_max_length: 64,
-            role_max_length: 50,
-            email_max_length: 64,
-            telegram_max_length: 32,
-            twitter_max_length: 32,
-            bio_max_length: 250,
-            avatar_url_max_length: 250,
-        },
+        user_profile_attributes: UserProfileAttributes::default(),
     };
 
     let users_manager = UsersManager::new(&mongo_config, registration_config).await?;
@@ -132,15 +124,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
     let registration_config = UsersManagerConfig {
         secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
         lifetime: std::time::Duration::from_secs(600),
-        user_profile_attributes: UserProfileAttributes {
-            name_max_length: 64,
-            role_max_length: 50,
-            email_max_length: 64,
-            telegram_max_length: 32,
-            twitter_max_length: 32,
-            bio_max_length: 250,
-            avatar_url_max_length: 250,
-        },
+        user_profile_attributes: UserProfileAttributes::default(),
     };
 
     let users_manager = UsersManager::new(&mongo_config, registration_config).await?;

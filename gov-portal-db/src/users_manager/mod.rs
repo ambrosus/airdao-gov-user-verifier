@@ -39,12 +39,36 @@ pub struct UsersManagerConfig {
 #[serde(rename_all = "camelCase")]
 pub struct UserProfileAttributes {
     pub name_max_length: usize,
+    pub name_min_length: usize,
     pub role_max_length: usize,
+    pub role_min_length: usize,
     pub email_max_length: usize,
+    pub email_min_length: usize,
     pub telegram_max_length: usize,
     pub twitter_max_length: usize,
     pub bio_max_length: usize,
+    pub bio_min_length: usize,
     pub avatar_url_max_length: usize,
+    pub avatar_url_min_length: usize,
+}
+
+impl Default for UserProfileAttributes {
+    fn default() -> Self {
+        Self {
+            name_max_length: 64,
+            name_min_length: 2,
+            role_max_length: 50,
+            role_min_length: 2,
+            email_max_length: 64,
+            email_min_length: 5, // length("a@a.a")
+            telegram_max_length: 32,
+            twitter_max_length: 32,
+            bio_max_length: 250,
+            bio_min_length: 2,
+            avatar_url_max_length: 250,
+            avatar_url_min_length: 7, // length("a://a.a")
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -240,33 +264,35 @@ impl UsersManager {
 
     /// Verifies user profile [`User`] struct fields for correctness
     fn verify_user(&self, user: &UserInfo) -> Result<(), error::Error> {
-        if user
-            .name
-            .as_ref()
-            .is_some_and(|value| value.len() > self.config.user_profile_attributes.name_max_length)
-        {
+        if user.name.as_ref().is_some_and(|value| {
+            value.len() < self.config.user_profile_attributes.name_min_length
+                || value.len() > self.config.user_profile_attributes.name_max_length
+        }) {
             return Err(error::Error::InvalidInput(format!(
-                "Name too long (max: {})",
+                "Name doesn't met requirements (min: {}, max: {})",
+                self.config.user_profile_attributes.name_min_length,
                 self.config.user_profile_attributes.name_max_length
             )));
         }
 
-        if user
-            .role
-            .as_ref()
-            .is_some_and(|value| value.len() > self.config.user_profile_attributes.role_max_length)
-        {
+        if user.role.as_ref().is_some_and(|value| {
+            value.len() < self.config.user_profile_attributes.role_min_length
+                || value.len() > self.config.user_profile_attributes.role_max_length
+        }) {
             return Err(error::Error::InvalidInput(format!(
-                "Role too long (max: {})",
+                "Role doesn't met requirements (min: {}, max: {})",
+                self.config.user_profile_attributes.role_min_length,
                 self.config.user_profile_attributes.role_max_length
             )));
         }
 
         if user.email.as_ref().is_some_and(|value| {
-            value.as_str().len() > self.config.user_profile_attributes.email_max_length
+            value.as_str().len() < self.config.user_profile_attributes.email_min_length
+                || value.as_str().len() > self.config.user_profile_attributes.email_max_length
         }) {
             return Err(error::Error::InvalidInput(format!(
-                "Email too long (max: {})",
+                "Email doesn't met requirements (min: {}, max: {})",
+                self.config.user_profile_attributes.email_min_length,
                 self.config.user_profile_attributes.email_max_length
             )));
         }
@@ -289,22 +315,24 @@ impl UsersManager {
             )));
         }
 
-        if user
-            .bio
-            .as_ref()
-            .is_some_and(|value| value.len() > self.config.user_profile_attributes.bio_max_length)
-        {
+        if user.bio.as_ref().is_some_and(|value| {
+            value.len() < self.config.user_profile_attributes.bio_min_length
+                || value.len() > self.config.user_profile_attributes.bio_max_length
+        }) {
             return Err(error::Error::InvalidInput(format!(
-                "Bio too long (max: {})",
+                "Bio doesn't met requirements (min: {}, max: {})",
+                self.config.user_profile_attributes.bio_min_length,
                 self.config.user_profile_attributes.bio_max_length
             )));
         }
 
         if user.avatar.as_ref().is_some_and(|value| {
-            value.as_str().len() > self.config.user_profile_attributes.avatar_url_max_length
+            value.as_str().len() < self.config.user_profile_attributes.avatar_url_min_length
+                || value.as_str().len() > self.config.user_profile_attributes.avatar_url_max_length
         }) {
             return Err(error::Error::InvalidInput(format!(
-                "Avatar URL too long (max: {})",
+                "Avatar URL doesn't met requirements (min: {}, max: {})",
+                self.config.user_profile_attributes.avatar_url_min_length,
                 self.config.user_profile_attributes.avatar_url_max_length
             )));
         }
@@ -337,12 +365,17 @@ mod tests {
                 "lifetime": 600,
                 "userProfileAttributes": {
                     "nameMaxLength": 64,
+                    "nameMinLength": 2,
                     "roleMaxLength": 50,
+                    "roleMinLength": 2,
                     "emailMaxLength": 64,
+                    "emailMinLength": 5,
                     "telegramMaxLength": 32,
                     "twitterMaxLength": 32,
                     "bioMaxLength": 250,
-                    "avatarUrlMaxLength": 250
+                    "bioMinLength": 2,
+                    "avatarUrlMaxLength": 250,
+                    "avatarUrlMinLength": 7
                 }
             }
         "#,
