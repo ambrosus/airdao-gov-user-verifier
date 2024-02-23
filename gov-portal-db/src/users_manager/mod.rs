@@ -159,7 +159,8 @@ impl UsersManager {
         let update = doc! {
             "$set": bson::to_bson(&RawUserProfile {
                 info: user,
-                ..Default::default()
+                quiz_solved: None,
+                blocked_until: None,
             })?
         };
 
@@ -196,7 +197,17 @@ impl UsersManager {
                 doc! {
                     "$set": bson::to_bson(&RawUserProfile {
                         quiz_solved: Some(true),
-                        ..Default::default()
+                        blocked_until: None,
+                        info: UserInfo {
+                            wallet,
+                            name: None,
+                            role: None,
+                            email: None,
+                            telegram: None,
+                            twitter: None,
+                            bio: None,
+                            avatar: None
+                        },
                     })?
                 }
             }
@@ -205,7 +216,16 @@ impl UsersManager {
                     "$set": bson::to_bson(&RawUserProfile {
                         quiz_solved: Some(false),
                         blocked_until: Some(block_until.timestamp_millis() as u64),
-                        ..Default::default()
+                        info: UserInfo {
+                            wallet,
+                            name: None,
+                            role: None,
+                            email: None,
+                            telegram: None,
+                            twitter: None,
+                            bio: None,
+                            avatar: None
+                        },
                     })?
                 }
             }

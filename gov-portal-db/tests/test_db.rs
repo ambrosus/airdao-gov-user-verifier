@@ -33,7 +33,7 @@ async fn test_register_user() -> Result<(), anyhow::Error> {
         .register_user(&UserInfo {
             wallet: addr_1,
             email: Some("test@test.com".try_into()?),
-            ..Default::default()
+            ..default_user_info()
         })
         .await?;
 
@@ -43,7 +43,7 @@ async fn test_register_user() -> Result<(), anyhow::Error> {
             .register_user(&UserInfo {
                 wallet: addr_1,
                 email: Some("test1@test.com".try_into()?),
-                ..Default::default()
+                ..default_user_info()
             })
             .await,
         Err(error::Error::UserAlreadyExist)
@@ -55,7 +55,7 @@ async fn test_register_user() -> Result<(), anyhow::Error> {
             .register_user(&UserInfo {
                 wallet: addr_2,
                 email: Some("test@test.com".try_into()?),
-                ..Default::default()
+                ..default_user_info()
             })
             .await,
         Err(error::Error::UserAlreadyExist)
@@ -148,7 +148,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
         .register_user(&UserInfo {
             wallet: addr_1,
             email: Some("test@test.com".try_into()?),
-            ..Default::default()
+            ..default_user_info()
         })
         .await?;
 
@@ -187,7 +187,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
             role: Some("some role".to_owned()),
             bio: Some("some bio".to_owned()),
             avatar: Some(url::Url::from_str("http://avatar.link")?),
-            ..Default::default()
+            ..default_user_info()
         })
         .await?;
 
@@ -203,4 +203,17 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
     users_manager.mongo_client.collection.drop(None).await?;
 
     Ok(())
+}
+
+fn default_user_info() -> UserInfo {
+    UserInfo {
+        wallet: Address::default(),
+        name: None,
+        role: None,
+        email: None,
+        telegram: None,
+        twitter: None,
+        bio: None,
+        avatar: None,
+    }
 }

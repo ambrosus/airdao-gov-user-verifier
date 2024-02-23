@@ -62,22 +62,13 @@ async fn verify_endpoint(
         return Err(AppError::VerificationNotAllowed);
     }
 
-    let result = match state
-        .client
-        .fetch_and_verify_user(req.token, req.user.info.wallet)
-        .await
-    {
-        Ok(verified_user) => create_verify_account_response(
-            &state.signer,
-            req.user.info.wallet,
-            verified_user,
-            Utc::now(),
-        ),
+    let wallet = req.user.info.wallet;
+    let result = match state.client.fetch_and_verify_user(req.token, wallet).await {
+        Ok(verified_user) => {
+            create_verify_account_response(&state.signer, wallet, verified_user, Utc::now())
+        }
         Err(e) => {
-            tracing::warn!(
-                "Failed to process verify request (wallet: {}). Error: {e}",
-                req.user.info.wallet
-            );
+            tracing::warn!("Failed to process verify request (wallet: {wallet}). Error: {e}",);
             return Err(e);
         }
     };

@@ -62,7 +62,7 @@ pub struct SBTRequest {
 }
 
 /// User's profile information struct
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInfo {
     pub wallet: Address,
@@ -92,7 +92,7 @@ impl UserInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserProfile {
     /// User's public profile information    
@@ -101,7 +101,7 @@ pub struct UserProfile {
     pub status: UserProfileStatus,
 }
 
-#[derive(Deserialize, Serialize, Default, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RawUserProfile {
     /// Quiz questionnaire solve result
@@ -262,7 +262,12 @@ impl TryFrom<RawUserRegistrationToken> for UserInfo {
         Ok(Self {
             wallet,
             email: Some(token.email),
-            ..Default::default()
+            name: None,
+            role: None,
+            telegram: None,
+            twitter: None,
+            bio: None,
+            avatar: None,
         })
     }
 }

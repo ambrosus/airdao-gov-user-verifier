@@ -200,7 +200,7 @@ async fn index_route(
         .pages
         .get(page_name)
         .map(|content| {
-            let user = user.unwrap_or_default();
+            let user = user.unwrap_or_else(default_user_info);
             Html(
                 content
                     .replace(
@@ -275,7 +275,7 @@ async fn update_user_route(
         .map(|content| {
             let (user, error_text) = match user {
                 Ok(user) => (user, None),
-                Err(e) => (UserInfo::default(), Some(e)),
+                Err(e) => (default_user_info(), Some(e)),
             };
 
             Html(
@@ -648,5 +648,18 @@ impl AppState {
                 Err(anyhow::Error::msg(error))
             }
         }
+    }
+}
+
+fn default_user_info() -> UserInfo {
+    UserInfo {
+        wallet: Address::default(),
+        name: None,
+        role: None,
+        email: None,
+        telegram: None,
+        twitter: None,
+        bio: None,
+        avatar: None,
     }
 }
