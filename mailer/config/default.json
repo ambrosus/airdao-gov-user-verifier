@@ -1,0 +1,9 @@
+{
+    "listenAddress": "0.0.0.0:10002",
+    "sendgrid": {
+        "apiKey": null
+    },
+    "templates": {
+        "email_verification": "./mailer/static/email_verification.html"
+    }
+}

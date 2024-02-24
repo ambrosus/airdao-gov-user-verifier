@@ -1,0 +1,38 @@
+[package]
+name = "airdao-gov-portal-mailer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# Local
+shared = { path = "../shared/" }
+
+# Async
+tokio = { workspace = true }
+
+# Web
+axum = { workspace = true }
+tower-http = { workspace = true }
+reqwest = { workspace = true }
+
+# SerDe
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+log = { workspace = true }
+
+# Misc
+backtrace = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+dotenv = { workspace = true }
+sendgrid = { workspace = true }
+url = { workspace = true }
+serde-email = { workspace = true }
+
+[dev-dependencies]

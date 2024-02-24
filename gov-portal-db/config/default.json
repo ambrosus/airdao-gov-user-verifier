@@ -20,6 +20,16 @@
             "bioMinLength": 2,
             "avatarUrlMaxLength": 250,
             "avatarUrlMinLength": 7
+        },
+        "emailVerification": {
+            "mailerBaseUrl": null,
+            "sendTimeout": 10,
+            "templateUrl": "https://airdao.io/gov-portal/email-verification?token={{REGISTRATION_TOKEN}}",
+            "from": {
+                "name": "AirDAO Gov Portal",
+                "email": "gwg@airdao.io"
+            },
+            "subject": "Complete Your Governor Email Verification"
         }
     },
     "mongo": {

@@ -507,6 +507,21 @@ pub struct UserDbConfig {
     pub base_url: String,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct EmailVerificationRequest {
+    pub from: EmailFrom,
+    pub subject: String,
+    pub to: serde_email::Email,
+    pub verification_url: url::Url,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailFrom {
+    pub email: serde_email::Email,
+    pub name: String,
+}
+
 #[cfg(test)]
 mod tests {
     use std::{str::FromStr, time::Duration};

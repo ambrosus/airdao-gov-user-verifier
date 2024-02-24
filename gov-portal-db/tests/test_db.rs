@@ -3,10 +3,10 @@ use std::str::FromStr;
 
 use airdao_gov_portal_db::{
     quiz::{Quiz, QuizAnswer, QuizConfig},
-    users_manager::*,
+    users_manager::{EmailVerificationConfig, *},
 };
 use assert_matches::assert_matches;
-use shared::common::{UserInfo, UserProfile, UserProfileStatus};
+use shared::common::{EmailFrom, UserInfo, UserProfile, UserProfileStatus};
 use web3::types::Address;
 
 #[tokio::test]
@@ -22,6 +22,16 @@ async fn test_register_user() -> Result<(), anyhow::Error> {
         secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
         lifetime: std::time::Duration::from_secs(600),
         user_profile_attributes: UserProfileAttributes::default(),
+        email_verification: EmailVerificationConfig {
+            mailer_base_url: "http://mailer".try_into().unwrap(),
+            send_timeout: std::time::Duration::from_secs(10),
+            template_url: "https://registration?token={{REGISTRATION_TOKEN}}".to_string(),
+            from: EmailFrom {
+                email: "gwg@airdao.io".try_into().unwrap(),
+                name: "AirDAO Gov Portal".to_string(),
+            },
+            subject: "Complete Your Governor Email Verification".to_string(),
+        },
     };
 
     let users_manager = UsersManager::new(&mongo_config, registration_config).await?;
@@ -125,6 +135,16 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
         secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
         lifetime: std::time::Duration::from_secs(600),
         user_profile_attributes: UserProfileAttributes::default(),
+        email_verification: EmailVerificationConfig {
+            mailer_base_url: "http://mailer".try_into().unwrap(),
+            send_timeout: std::time::Duration::from_secs(10),
+            template_url: "https://registration?token={{REGISTRATION_TOKEN}}".to_string(),
+            from: EmailFrom {
+                email: "gwg@airdao.io".try_into().unwrap(),
+                name: "AirDAO Gov Portal".to_string(),
+            },
+            subject: "Complete Your Governor Email Verification".to_string(),
+        },
     };
 
     let users_manager = UsersManager::new(&mongo_config, registration_config).await?;

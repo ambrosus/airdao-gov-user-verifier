@@ -79,6 +79,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "airdao-gov-portal-mailer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "backtrace",
+ "chrono",
+ "dotenv",
+ "log",
+ "reqwest",
+ "sendgrid",
+ "serde",
+ "serde-email",
+ "serde_json",
+ "shared",
+ "thiserror",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "airdao-gov-portal-mocker"
 version = "0.1.0"
 dependencies = [
@@ -2303,6 +2326,20 @@ name = "semver-parser"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
+
+[[package]]
+name = "sendgrid"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b9162524348fc21465864bc25ebcf8a68d88fad59b2248b36f05dd1cb17e2d7"
+dependencies = [
+ "data-encoding",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+]
 
 [[package]]
 name = "serde"

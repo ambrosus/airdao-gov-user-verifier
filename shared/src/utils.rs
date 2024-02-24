@@ -208,6 +208,15 @@ pub fn convert_to_claims_with_expiration(
     }
 }
 
+pub fn parse_json_response<T: DeserializeOwned>(text: String) -> Result<T, String> {
+    let parsed = serde_json::from_str::<T>(&text);
+    if let Ok(parsed) = parsed {
+        return Ok(parsed);
+    }
+
+    Err(text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,5 +257,14 @@ mod tests {
         assert_matches::assert_matches!(&decoded[1], Token::Uint(value) if value.as_u128() == user_id);
         assert_matches::assert_matches!(&decoded[2], Token::Uint(value) if value.as_u64() == req_expires_at);
         assert_matches::assert_matches!(&decoded[3], Token::Uint(value) if value.as_u64() == sbt_expires_at);
+    }
+
+    #[test]
+    fn test_parse_json_response() {
+        assert!(super::parse_json_response::<()>("null".to_owned()).is_ok());
+        assert_eq!(
+            super::parse_json_response::<()>("some error".to_owned()),
+            Err("some error".to_owned())
+        );
     }
 }

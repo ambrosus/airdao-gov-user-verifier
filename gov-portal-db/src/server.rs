@@ -7,7 +7,8 @@ use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
 use shared::common::{
-    SessionToken, UserInfo, UserProfile, UserProfileStatus, UserRegistrationToken,
+    EmailVerificationRequest, SessionToken, UserInfo, UserProfile, UserProfileStatus,
+    UserRegistrationToken,
 };
 
 use crate::{
@@ -274,23 +275,48 @@ async fn update_user_route(
 async fn verify_email_route(
     State(state): State<AppState>,
     Json(req): Json<VerifyEmailRequest>,
-) -> Result<Json<UserRegistrationToken>, String> {
+) -> Result<Json<()>, String> {
     tracing::debug!("[/verify-email] Request {req:?}");
 
-    // TODO: fetch user information from MongoDB
-    let user = state
+    let res = match state
         .session_manager
         .verify_token(&req.session)
         .and_then(|wallet| {
             state
                 .users_manager
-                .acquire_registration_token(wallet, req.email)
+                .acquire_registration_token(wallet, req.email.clone())
         })
-        .map_err(|e| format!("Verify email request failure. Error: {e}"));
+        .map_err(|e| format!("Verify email request failure. Error: {e}"))
+        .and_then(|UserRegistrationToken { token }| {
+            url::Url::try_from(
+                state
+                    .config
+                    .users_manager
+                    .email_verification
+                    .template_url
+                    .replace("{{REGISTRATION_TOKEN}}", &token)
+                    .as_str(),
+            )
+            .map_err(|e| format!("Failed to create verification link. Error: {e:?}"))
+        })
+        .map(|url| EmailVerificationRequest {
+            from: state.config.users_manager.email_verification.from.clone(),
+            to: req.email,
+            subject: state
+                .config
+                .users_manager
+                .email_verification
+                .subject
+                .clone(),
+            verification_url: url,
+        }) {
+        Ok(req) => state.users_manager.send_email_verification(req).await,
+        Err(e) => Err(e),
+    };
 
-    tracing::debug!("[/verify-email] Response {user:?}");
+    tracing::debug!("[/verify-email] Response {res:?}");
 
-    user.map(Json)
+    res.map(Json)
 }
 
 /// Route handler to register new User with basic profile

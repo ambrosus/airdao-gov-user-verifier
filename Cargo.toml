@@ -3,7 +3,8 @@ members = [
     "user-verifier",
     "gov-portal-mocker",
     "gov-portal-db",
-    "shared"
+    "shared",
+    "mailer",
 ]
 resolver = "2"
 
@@ -56,3 +57,4 @@ base64 = "0"
 rand = "0"
 anyhow = "1"
 dotenv = "0"
+sendgrid = "0"

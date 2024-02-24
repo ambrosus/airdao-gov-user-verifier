@@ -16,7 +16,7 @@ use tower_http::cors::CorsLayer;
 use shared::{
     common::{
         ApprovedResponse, PendingResponse, SBTRequest, SessionToken, SignedSBTRequest,
-        UserDbConfig, UserInfo, UserRegistrationToken, VerifyAccountResponse,
+        UserDbConfig, UserInfo, UserProfile, VerifyAccountResponse,
     },
     logger, utils,
 };
@@ -182,7 +182,7 @@ async fn index_route(
     State(state): State<AppState>,
     Query(req): Query<IndexQuery>,
 ) -> Result<Html<String>, String> {
-    let (page_name, session_token, user) = match req {
+    let (page_name, session_token, user_profile) = match req {
         IndexQuery::WithJwtToken { session: token } => match state.get_user(&token).await {
             Ok(user) => ("index.html", None, Some(user)),
             Err(e) => {
@@ -195,6 +195,8 @@ async fn index_route(
         },
         IndexQuery::NoJwtToken {} => ("no-session.html", None, None),
     };
+
+    let user = user_profile.map(|profile| profile.info);
 
     state
         .pages
@@ -243,7 +245,7 @@ async fn update_user_route(
     State(state): State<AppState>,
     Query(req): Query<UpdateUserQuery>,
 ) -> Result<Html<String>, String> {
-    let (page_name, session_token, user) = match req {
+    let (page_name, session_token, user_profile) = match req {
         UpdateUserQuery::WithJwtToken {
             session: token,
             name,
@@ -268,6 +270,8 @@ async fn update_user_route(
         },
         UpdateUserQuery::NoJwtToken {} => ("no-session.html", None, Err("No session".to_owned())),
     };
+
+    let user = user_profile.map(|profile| profile.info);
 
     state
         .pages
@@ -411,13 +415,16 @@ async fn verify_email_route(
     State(state): State<AppState>,
     Query(req): Query<VerifyEmailQuery>,
 ) -> Result<Html<String>, String> {
-    let registration_token = match serde_email::Email::from_str(&req.email) {
-        Ok(email) => state.verify_email(&email, &req.session).await,
+    let verify_email_res = match serde_email::Email::from_str(&req.email) {
+        Ok(email) => state
+            .verify_email(&email, &req.session)
+            .await
+            .map(|_| email),
         Err(e) => Err(anyhow::anyhow!("Invalid user email: {e}")),
     };
 
-    let (page_name, token) = match registration_token {
-        Ok(UserRegistrationToken { token, .. }) => ("confirm-registration.html", Ok(token)),
+    let (page_name, email_res) = match verify_email_res {
+        Ok(email) => ("confirm-registration.html", Ok(email)),
         Err(e) => (
             "error.html",
             Err(format!(
@@ -431,7 +438,7 @@ async fn verify_email_route(
         .pages
         .get(page_name)
         .map(|content| {
-            let (token, error_text) = match token {
+            let (email, error_text) = match email_res {
                 Ok(token) => (token, None),
                 Err(e) => (Default::default(), Some(e)),
             };
@@ -439,7 +446,7 @@ async fn verify_email_route(
             Html(
                 content
                     .replace("{{ERROR_TEXT}}", &error_text.unwrap_or_default())
-                    .replace("{{REGISTRATION_TOKEN}}", &token),
+                    .replace("{{EMAIL}}", email.as_str()),
             )
         })
         .ok_or_else(|| "Resource Not Found".to_owned())
@@ -493,7 +500,7 @@ impl AppState {
         &self,
         email: &serde_email::Email,
         token: &str,
-    ) -> Result<UserRegistrationToken, anyhow::Error> {
+    ) -> Result<(), anyhow::Error> {
         let raw_data = self
             .client
             .post(&[&self.config.user_db.base_url, "/verify-email"].concat())
@@ -503,8 +510,7 @@ impl AppState {
             .text()
             .await?;
 
-        serde_json::from_str::<UserRegistrationToken>(&raw_data)
-            .map_err(|_| anyhow::Error::msg(raw_data))
+        utils::parse_json_response(raw_data).map_err(anyhow::Error::msg)
     }
 
     async fn register_user(&self, token: &str) -> Result<UserInfo, anyhow::Error> {
@@ -520,7 +526,7 @@ impl AppState {
         serde_json::from_str::<UserInfo>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
     }
 
-    async fn get_user(&self, token: &str) -> Result<UserInfo, anyhow::Error> {
+    async fn get_user(&self, token: &str) -> Result<UserProfile, anyhow::Error> {
         let raw_data = self
             .client
             .post(&[&self.config.user_db.base_url, "/user"].concat())
@@ -530,7 +536,7 @@ impl AppState {
             .text()
             .await?;
 
-        serde_json::from_str::<UserInfo>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
+        serde_json::from_str::<UserProfile>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
     }
 
     #[allow(clippy::too_many_arguments)]

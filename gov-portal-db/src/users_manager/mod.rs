@@ -13,8 +13,12 @@ use mongodb::{
 use serde::Deserialize;
 use tokio::time::Duration;
 
-use shared::common::{
-    RawUserProfile, RawUserRegistrationToken, UserInfo, UserProfile, UserRegistrationToken,
+use shared::{
+    common::{
+        EmailFrom, EmailVerificationRequest, RawUserProfile, RawUserRegistrationToken, UserInfo,
+        UserProfile, UserRegistrationToken,
+    },
+    utils,
 };
 
 use mongo_client::{MongoClient, MongoConfig};
@@ -32,8 +36,20 @@ pub struct UsersManagerConfig {
     pub secret: String,
     /// User profile attributes verification settings
     pub user_profile_attributes: UserProfileAttributes,
+    pub email_verification: EmailVerificationConfig,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailVerificationConfig {
+    /// Mailer service base url to send emails from AirDao Gov Portal
+    pub mailer_base_url: url::Url,
+    #[serde(deserialize_with = "utils::de_secs_duration")]
+    pub send_timeout: std::time::Duration,
+    pub template_url: String,
+    pub from: EmailFrom,
+    pub subject: String,
+}
 /// Contains settings to verify user profile [`User`] attributes
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -80,6 +96,8 @@ pub enum QuizResult {
 /// User profiles manager which provides read/write access to user profile data stored MongoDB
 pub struct UsersManager {
     pub mongo_client: MongoClient,
+    pub mailer_client: reqwest::Client,
+    pub mailer_url: url::Url,
     pub config: UsersManagerConfig,
 }
 
@@ -93,6 +111,11 @@ impl UsersManager {
 
         Ok(Self {
             mongo_client,
+            mailer_client: reqwest::Client::new(),
+            mailer_url: config
+                .email_verification
+                .mailer_base_url
+                .join("/send-verification-email")?,
             config,
         })
     }
@@ -359,6 +382,37 @@ impl UsersManager {
 
         Ok(())
     }
+
+    pub async fn send_email_verification(
+        &self,
+        req: EmailVerificationRequest,
+    ) -> Result<(), String> {
+        tracing::debug!(
+            "Send verification request {req:?} to mailer service (url: {url})",
+            url = self.mailer_url
+        );
+
+        match tokio::time::timeout(
+            self.config.email_verification.send_timeout,
+            self.mailer_client
+                .post(self.mailer_url.as_str())
+                .json(&req)
+                .send(),
+        )
+        .await
+        {
+            Ok(Ok(res)) => res
+                .text()
+                .await
+                .map_err(|e| format!("Failed to get response. Error: {e:?}"))
+                .and_then(utils::parse_json_response),
+            Ok(Err(e)) => Err(format!("Failed to send verification email. Error: {e:?}")),
+            Err(_) => Err(format!(
+                "Send verification email timeout ({timeout:?}).",
+                timeout = self.config.email_verification.send_timeout
+            )),
+        }
+    }
 }
 
 /// Returns true if an input error kind [`MongoErrorKind`] is representing duplication error or false otherwise.
@@ -396,6 +450,16 @@ mod tests {
                     "bioMinLength": 2,
                     "avatarUrlMaxLength": 250,
                     "avatarUrlMinLength": 7
+                },
+                "emailVerification": {
+                    "mailerBaseUrl": "http://localhost:10002",
+                    "sendTimeout": 10,
+                    "templateUrl": "https://airdao.io/gov-portal/email-verification?token={{REGISTRATION_TOKEN}}",
+                    "from": {
+                        "name": "AirDAO Gov Portal",
+                        "email": "gwg@airdao.io"
+                    },
+                    "subject": "Complete Your Governor Email Verification"
                 }
             }
         "#,
