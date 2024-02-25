@@ -96,7 +96,7 @@ jobs:
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
   build_and_publish_verifier:
-    needs: build_and_publish_db
+    needs: build_and_publish_binary
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -139,7 +139,7 @@ jobs:
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
   build_and_publish_mailer:
-    needs: build_and_publish_db
+    needs: build_and_publish_binary
     runs-on: ubuntu-latest
     permissions:
       contents: read
