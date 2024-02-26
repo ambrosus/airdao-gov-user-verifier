@@ -15,8 +15,8 @@ use tokio::time::Duration;
 
 use shared::{
     common::{
-        EmailFrom, EmailVerificationRequest, RawUserProfile, RawUserRegistrationToken, UserInfo,
-        UserProfile, UserRegistrationToken,
+        EmailFrom, RawUserProfile, SendEmailRequest, UserEmailConfirmationToken, UserInfo,
+        UserProfile,
     },
     utils,
 };
@@ -25,7 +25,7 @@ use mongo_client::{MongoClient, MongoConfig};
 
 const MONGO_DUPLICATION_ERROR: i32 = 11000;
 
-/// Users manager's [`UsersManager`] settings for JWT registration token and user profile attributes verification
+/// Users manager's [`UsersManager`] settings
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct UsersManagerConfig {
@@ -115,13 +115,13 @@ impl UsersManager {
             mailer_url: config
                 .email_verification
                 .mailer_base_url
-                .join("/send-verification-email")?,
+                .join("/send-email")?,
             config,
         })
     }
 
-    /// Registers new user by writing [`User`] struct to MongoDB, which will be uniquely indexed by EVM-like wallet address [`Address`].
-    /// Input [`User`] struct is verified for correctness.
+    /// Registers new user by writing verified [`UserInfo`] struct to MongoDB, which will be uniquely indexed by
+    /// EVM-like wallet address [`Address`] and user email [`serde_email::Email`].
     pub async fn register_user(&self, user: &UserInfo) -> Result<(), error::Error> {
         self.verify_user(user)?;
 
@@ -180,11 +180,7 @@ impl UsersManager {
         };
 
         let update = doc! {
-            "$set": bson::to_bson(&RawUserProfile {
-                info: user,
-                quiz_solved: None,
-                blocked_until: None,
-            })?
+            "$set": bson::to_bson(&RawUserProfile::from(user))?
         };
 
         let options = UpdateOptions::builder().upsert(false).build();
@@ -225,6 +221,7 @@ impl UsersManager {
                             wallet,
                             name: None,
                             role: None,
+                            old_email: None,
                             email: None,
                             telegram: None,
                             twitter: None,
@@ -243,6 +240,7 @@ impl UsersManager {
                             wallet,
                             name: None,
                             role: None,
+                            old_email: None,
                             email: None,
                             telegram: None,
                             twitter: None,
@@ -272,33 +270,33 @@ impl UsersManager {
         res
     }
 
-    /// Acquires registration JWT token [`UserRegistrationToken`] for a pair of EVM-like wallet address [`Address`] and
-    /// user email [`serde_email::Email`]. Should be used to register new user profile.
+    /// Acquires email confirmation JWT token [`UserEmailConfirmationToken`] for a pair of EVM-like wallet address [`Address`] and
+    /// user email [`serde_email::Email`]. Should be used to set or update email in user profile.
     /// JWT token will contain EVM-like wallet address [`Address`] and user email [`serde_email::Email`] which could be used
-    /// to create [`User`] struct out of it.
-    pub fn acquire_registration_token(
+    /// to create [`UserInfo`] struct out of it.
+    pub fn acquire_email_confirmation_token(
         &self,
         wallet: Address,
-        email: serde_email::Email,
-    ) -> Result<UserRegistrationToken, anyhow::Error> {
-        UserRegistrationToken::new(
-            RawUserRegistrationToken {
-                checksum_wallet: shared::utils::get_checksum_address(&wallet),
-                email,
-                expires_at: (Utc::now() + self.config.lifetime).timestamp_millis() as u64,
-            },
+        old_email: Option<&serde_email::Email>,
+        email: &serde_email::Email,
+    ) -> Result<UserEmailConfirmationToken, anyhow::Error> {
+        UserEmailConfirmationToken::new(
+            wallet,
+            old_email,
+            email,
+            self.config.lifetime,
             self.config.secret.as_bytes(),
         )
         .map_err(|e| anyhow::Error::msg(format!("Failed to generate JWT token. Error: {}", e)))
     }
 
-    /// Verifies JWT token [`UserRegistrationToken`] and extracts EVM-like wallet address [`Address`]
-    /// and user email [`serde_email::Email`] to create user profile [`User`] struct filled with extracted fields.
-    pub fn verify_registration_token(
+    /// Verifies JWT token [`UserEmailConfirmationToken`] and extracts EVM-like wallet address [`Address`]
+    /// and user email [`serde_email::Email`] to create [`UserInfo`] struct with extracted fields set.
+    pub fn verify_email_confirmation_token(
         &self,
-        token: &UserRegistrationToken,
+        token: &UserEmailConfirmationToken,
     ) -> Result<UserInfo, anyhow::Error> {
-        let user = UserInfo::try_from(token.verify(self.config.secret.as_bytes())?)?;
+        let user = token.verify(self.config.secret.as_bytes())?;
 
         self.verify_user(&user)?;
 
@@ -383,10 +381,7 @@ impl UsersManager {
         Ok(())
     }
 
-    pub async fn send_email_verification(
-        &self,
-        req: EmailVerificationRequest,
-    ) -> Result<(), String> {
+    pub async fn send_email_verification(&self, req: SendEmailRequest) -> Result<(), String> {
         tracing::debug!(
             "Send verification request {req:?} to mailer service (url: {url})",
             url = self.mailer_url
@@ -454,7 +449,7 @@ mod tests {
                 "emailVerification": {
                     "mailerBaseUrl": "http://localhost:10002",
                     "sendTimeout": 10,
-                    "templateUrl": "https://airdao.io/gov-portal/email-verification?token={{REGISTRATION_TOKEN}}",
+                    "templateUrl": "https://airdao.io/gov-portal/email-verification?token={{VERIFICATION_TOKEN}}",
                     "from": {
                         "name": "AirDAO Gov Portal",
                         "email": "gwg@airdao.io"

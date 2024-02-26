@@ -2,7 +2,7 @@ use axum::{extract::State, routing::post, Json, Router};
 use std::sync::Arc;
 
 use crate::{sendgrid::SendGridClient, templates_manager::TemplatesManager};
-use shared::common::EmailVerificationRequest;
+use shared::common::SendEmailRequest;
 
 /// State shared between route handlers
 #[derive(Clone)]
@@ -22,7 +22,7 @@ pub async fn start(
     };
 
     let app = Router::new()
-        .route("/send-verification-email", post(send_verification_email))
+        .route("/send-email", post(send_email))
         .with_state(state);
 
     tracing::debug!("Server listening on {}", addr);
@@ -34,27 +34,27 @@ pub async fn start(
         .map_err(anyhow::Error::from)
 }
 
-async fn send_verification_email(
+async fn send_email(
     State(state): State<AppState>,
-    Json(req): Json<EmailVerificationRequest>,
+    Json(req): Json<SendEmailRequest>,
 ) -> Result<Json<()>, String> {
-    tracing::debug!("[/send-verification-email] Request {req:?}");
+    tracing::debug!("[/send-email] Request {req:?}");
 
     let res = match state
         .templates_manager
         .templates
-        .get("email_verification")
-        .map(|template| template.replace("{{VERIFICATION_LINK}}", req.verification_url.as_str()))
+        .get(req.kind.as_str())
+        .map(|template| template.replace("{{CONFIRMATION_URL}}", req.verification_url.as_str()))
     {
         Some(template) => state
             .sendgrid_client
-            .send(req.from, template, req.subject, req.to)
+            .send(&req.from, template.as_str(), req.subject.as_str(), &req.to)
             .await
-            .map_err(|e| format!("Send verification email failure. Error: {e:?}")),
+            .map_err(|e| format!("Send email (request: {req:?}) failure. Error: {e:?}")),
         None => Err("Email verification template is missed".to_string()),
     };
 
-    tracing::debug!("[/send-verification-email] Response {res:?}");
+    tracing::debug!("[/send-email] Response {res:?}");
 
     res.map(Json)
 }

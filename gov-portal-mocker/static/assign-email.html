@@ -1,0 +1,28 @@
+<!-- pending.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AirDAO Gov Portal Mocker</title>
+</head>
+<body>
+    <p>
+        <label for="email">Email:</label>
+        <input type="text" id="email" name="email" value="{{USER_EMAIL}}" />
+    </p>
+    <p>
+        <button id="btnVerify" onclick="verify()">Verify Email</button>
+    </p>
+    <script>
+        function verify() {
+            let email = encodeURIComponent(document.getElementById("email").value);
+            let old_email = "{{USER_EMAIL}}";
+            if (old_email.length > 0) {
+                old_email = "&old_email=" + encodeURIComponent("{{USER_EMAIL}}");
+            }
+            window.location.replace(`http://localhost:8080/verify-email?email=${email}&session={{SESSION}}${old_email}`)
+        }
+    </script>
+</body>
+</html>

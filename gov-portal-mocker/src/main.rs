@@ -81,6 +81,13 @@ pub enum IndexQuery {
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
+pub enum AssignEmailQuery {
+    WithJwtToken { session: String },
+    NoJwtToken {},
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
 pub enum UpdateUserQuery {
     WithJwtToken {
         session: String,
@@ -96,13 +103,14 @@ pub enum UpdateUserQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct VerifyEmailQuery {
-    email: String,
+    old_email: Option<serde_email::Email>,
+    email: serde_email::Email,
     session: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-pub enum RegisterQuery {
+pub enum UpdateEmailQuery {
     WithJwtToken { token: String },
     NoJwtToken {},
 }
@@ -163,9 +171,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/", get(index_route))
         .route("/auth", get(auth_route))
         .route("/verify-email", get(verify_email_route))
-        .route("/register", get(register_route))
+        .route("/update-email", get(update_email_route))
         .route("/update-user", get(update_user_route))
         .route("/verify-wallet", get(verify_wallet_route))
+        .route("/assign-email", get(assign_email_route))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -190,7 +199,7 @@ async fn index_route(
                     "Failed to get user by session token `{token}`. Error: {}",
                     e
                 );
-                ("no-user.html", Some(token), None)
+                ("assign-email.html", Some(token), None)
             }
         },
         IndexQuery::NoJwtToken {} => ("no-session.html", None, None),
@@ -415,21 +424,19 @@ async fn verify_email_route(
     State(state): State<AppState>,
     Query(req): Query<VerifyEmailQuery>,
 ) -> Result<Html<String>, String> {
-    let verify_email_res = match serde_email::Email::from_str(&req.email) {
-        Ok(email) => state
-            .verify_email(&email, &req.session)
-            .await
-            .map(|_| email),
-        Err(e) => Err(anyhow::anyhow!("Invalid user email: {e}")),
-    };
+    let verify_email_res = state
+        .verify_email(req.old_email.as_ref(), &req.email, &req.session)
+        .await
+        .map(|_| req.email.clone());
 
     let (page_name, email_res) = match verify_email_res {
         Ok(email) => ("confirm-registration.html", Ok(email)),
         Err(e) => (
             "error.html",
             Err(format!(
-                "Failed to verify user email ({}) by session token `{}`. Error: {}",
-                req.email, req.session, e
+                "Failed to verify user email ({email}) by session token `{session}`. Error: {e}",
+                email = req.email,
+                session = req.session
             )),
         ),
     };
@@ -452,13 +459,13 @@ async fn verify_email_route(
         .ok_or_else(|| "Resource Not Found".to_owned())
 }
 
-async fn register_route(
+async fn update_email_route(
     State(state): State<AppState>,
-    Query(req): Query<RegisterQuery>,
+    Query(req): Query<UpdateEmailQuery>,
 ) -> Result<Html<String>, String> {
     let page_name = match req {
-        RegisterQuery::WithJwtToken { token } => match state.register_user(&token).await {
-            Ok(UserInfo { wallet: _, .. }) => "no-session.html", // at this point we don't have session token, so user should connect wallet again
+        UpdateEmailQuery::WithJwtToken { token } => match state.update_email(&token).await {
+            Ok(()) => "no-session.html", // at this point we don't have session token, so user should connect wallet again
             Err(e) => {
                 tracing::warn!(
                     "Failed to register user by registration token `{token}`. Error: {}",
@@ -467,7 +474,7 @@ async fn register_route(
                 "no-session.html"
             }
         },
-        RegisterQuery::NoJwtToken {} => "no-session.html",
+        UpdateEmailQuery::NoJwtToken {} => "no-session.html",
     };
 
     state
@@ -475,6 +482,46 @@ async fn register_route(
         .get(page_name)
         .map(|content| {
             Html(content.replace("{{CLIENT_ID}}", &state.config.signer.fractal_client_id))
+        })
+        .ok_or_else(|| "Resource Not Found".to_owned())
+}
+
+async fn assign_email_route(
+    State(state): State<AppState>,
+    Query(req): Query<AssignEmailQuery>,
+) -> Result<Html<String>, String> {
+    let (page_name, session_token, user_profile) = match req {
+        AssignEmailQuery::WithJwtToken { session: token } => match state.get_user(&token).await {
+            Ok(user) => ("assign-email.html", Some(token), Some(user)),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to get user by session token `{token}`. Error: {}",
+                    e
+                );
+                ("assign-email.html", Some(token), None)
+            }
+        },
+        AssignEmailQuery::NoJwtToken {} => ("no-session.html", None, None),
+    };
+
+    let user = user_profile.map(|profile| profile.info);
+
+    state
+        .pages
+        .get(page_name)
+        .map(|content| {
+            let user = user.unwrap_or_else(default_user_info);
+            Html(
+                content
+                    .replace(
+                        "{{USER_EMAIL}}",
+                        user.email
+                            .as_ref()
+                            .map(|email| email.as_str())
+                            .unwrap_or_default(),
+                    )
+                    .replace("{{SESSION}}", &session_token.unwrap_or_default()),
+            )
         })
         .ok_or_else(|| "Resource Not Found".to_owned())
 }
@@ -498,13 +545,14 @@ impl AppState {
 
     async fn verify_email(
         &self,
+        old_email: Option<&serde_email::Email>,
         email: &serde_email::Email,
         token: &str,
     ) -> Result<(), anyhow::Error> {
         let raw_data = self
             .client
             .post(&[&self.config.user_db.base_url, "/verify-email"].concat())
-            .json(&json!({"token": token, "email": email}))
+            .json(&json!({"token": token, "old_email": old_email, "email": email}))
             .send()
             .await?
             .text()
@@ -513,17 +561,17 @@ impl AppState {
         utils::parse_json_response(raw_data).map_err(anyhow::Error::msg)
     }
 
-    async fn register_user(&self, token: &str) -> Result<UserInfo, anyhow::Error> {
+    async fn update_email(&self, token: &str) -> Result<(), anyhow::Error> {
         let raw_data = self
             .client
-            .post(&[&self.config.user_db.base_url, "/register"].concat())
+            .post(&[&self.config.user_db.base_url, "/update-email"].concat())
             .json(&json!({"token": token}))
             .send()
             .await?
             .text()
             .await?;
 
-        serde_json::from_str::<UserInfo>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
+        utils::parse_json_response(raw_data).map_err(anyhow::Error::msg)
     }
 
     async fn get_user(&self, token: &str) -> Result<UserProfile, anyhow::Error> {
@@ -662,6 +710,7 @@ fn default_user_info() -> UserInfo {
         wallet: Address::default(),
         name: None,
         role: None,
+        old_email: None,
         email: None,
         telegram: None,
         twitter: None,

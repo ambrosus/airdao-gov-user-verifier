@@ -18,23 +18,25 @@ async fn test_register_user() -> Result<(), anyhow::Error> {
         request_timeout: 10,
     };
 
-    let registration_config = UsersManagerConfig {
-        secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
-        lifetime: std::time::Duration::from_secs(600),
-        user_profile_attributes: UserProfileAttributes::default(),
-        email_verification: EmailVerificationConfig {
-            mailer_base_url: "http://mailer".try_into().unwrap(),
-            send_timeout: std::time::Duration::from_secs(10),
-            template_url: "https://registration?token={{REGISTRATION_TOKEN}}".to_string(),
-            from: EmailFrom {
-                email: "gwg@airdao.io".try_into().unwrap(),
-                name: "AirDAO Gov Portal".to_string(),
+    let users_manager = UsersManager::new(
+        &mongo_config,
+        UsersManagerConfig {
+            secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
+            lifetime: std::time::Duration::from_secs(600),
+            user_profile_attributes: UserProfileAttributes::default(),
+            email_verification: EmailVerificationConfig {
+                mailer_base_url: "http://mailer".try_into().unwrap(),
+                send_timeout: std::time::Duration::from_secs(10),
+                template_url: "https://registration?token={{VERIFICATION_TOKEN}}".to_string(),
+                from: EmailFrom {
+                    email: "gwg@airdao.io".try_into().unwrap(),
+                    name: "AirDAO Gov Portal".to_string(),
+                },
+                subject: "Complete Your Governor Email Verification".to_string(),
             },
-            subject: "Complete Your Governor Email Verification".to_string(),
         },
-    };
-
-    let users_manager = UsersManager::new(&mongo_config, registration_config).await?;
+    )
+    .await?;
 
     let addr_1 = Address::from_low_u64_le(0);
     let addr_2 = Address::from_low_u64_le(1);
@@ -131,23 +133,25 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
         request_timeout: 10,
     };
 
-    let registration_config = UsersManagerConfig {
-        secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
-        lifetime: std::time::Duration::from_secs(600),
-        user_profile_attributes: UserProfileAttributes::default(),
-        email_verification: EmailVerificationConfig {
-            mailer_base_url: "http://mailer".try_into().unwrap(),
-            send_timeout: std::time::Duration::from_secs(10),
-            template_url: "https://registration?token={{REGISTRATION_TOKEN}}".to_string(),
-            from: EmailFrom {
-                email: "gwg@airdao.io".try_into().unwrap(),
-                name: "AirDAO Gov Portal".to_string(),
+    let users_manager = UsersManager::new(
+        &mongo_config,
+        UsersManagerConfig {
+            secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
+            lifetime: std::time::Duration::from_secs(600),
+            user_profile_attributes: UserProfileAttributes::default(),
+            email_verification: EmailVerificationConfig {
+                mailer_base_url: "http://mailer".try_into().unwrap(),
+                send_timeout: std::time::Duration::from_secs(10),
+                template_url: "https://registration?token={{VERIFICATION_TOKEN}}".to_string(),
+                from: EmailFrom {
+                    email: "gwg@airdao.io".try_into().unwrap(),
+                    name: "AirDAO Gov Portal".to_string(),
+                },
+                subject: "Complete Your Governor Email Verification".to_string(),
             },
-            subject: "Complete Your Governor Email Verification".to_string(),
         },
-    };
-
-    let users_manager = UsersManager::new(&mongo_config, registration_config).await?;
+    )
+    .await?;
 
     let quiz_result = quiz.verify_answers(vec![
         serde_json::from_str::<QuizAnswer>(
@@ -230,6 +234,7 @@ fn default_user_info() -> UserInfo {
         wallet: Address::default(),
         name: None,
         role: None,
+        old_email: None,
         email: None,
         telegram: None,
         twitter: None,

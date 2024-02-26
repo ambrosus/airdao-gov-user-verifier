@@ -13,7 +13,7 @@ pub struct AppConfig {
     pub listen_address: String,
     /// Session tokens configuration to allow access to database
     pub session: SessionConfig,
-    /// User registration configuration
+    /// Users manager configuration
     pub users_manager: UsersManagerConfig,
     /// MongoDB client configuration
     pub mongo: MongoConfig,

@@ -24,7 +24,7 @@
         "emailVerification": {
             "mailerBaseUrl": null,
             "sendTimeout": 10,
-            "templateUrl": "https://airdao.io/gov-portal/email-verification?token={{REGISTRATION_TOKEN}}",
+            "templateUrl": "https://airdao.io/gov-portal/email-verification?token={{VERIFICATION_TOKEN}}",
             "from": {
                 "name": "AirDAO Gov Portal",
                 "email": "gwg@airdao.io"

@@ -12,7 +12,7 @@
         "pages": {
             "index.html": "./gov-portal-mocker/static/index.html",
             "no-session.html": "./gov-portal-mocker/static/no-session.html",
-            "no-user.html": "./gov-portal-mocker/static/no-user.html",
+            "assign-email.html": "./gov-portal-mocker/static/assign-email.html",
             "success.html": "./gov-portal-mocker/static/success.html",
             "pending.html": "./gov-portal-mocker/static/pending.html",
             "valid-message.html": "./gov-portal-mocker/static/valid-message.html",

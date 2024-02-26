@@ -4,6 +4,7 @@
         "apiKey": null
     },
     "templates": {
-        "email_verification": "./mailer/static/email_verification.html"
+        "email_verification": "./mailer/static/email_verification.html",
+        "email_change": "./mailer/static/email_verification.html"
     }
 }

@@ -4,7 +4,7 @@ use ethabi::{encode, Address, ParamType, Token};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::time::Duration;
 
-use crate::utils::{convert_to_claims_with_expiration, decode_sbt_request};
+use crate::utils::{self, convert_to_claims_with_expiration, decode_sbt_request};
 
 /// Minimum time required before oauth2 token expires in seconds
 static OAUTH_TOKEN_MINIMUM_LIFETIME: u64 = 300;
@@ -70,6 +70,8 @@ pub struct UserInfo {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
+    #[serde(skip_serializing)]
+    pub old_email: Option<serde_email::Email>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<serde_email::Email>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -115,6 +117,16 @@ pub struct RawUserProfile {
     /// Users profile information
     #[serde(flatten)]
     pub info: UserInfo,
+}
+
+impl From<UserInfo> for RawUserProfile {
+    fn from(info: UserInfo) -> Self {
+        Self {
+            quiz_solved: None,
+            blocked_until: None,
+            info,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,27 +260,6 @@ impl UserProfile {
         } else {
             false
         }
-    }
-}
-
-impl TryFrom<RawUserRegistrationToken> for UserInfo {
-    type Error = anyhow::Error;
-
-    fn try_from(token: RawUserRegistrationToken) -> Result<Self, Self::Error> {
-        let wallet = ethereum_types::Address::from(<[u8; 20]>::try_from(
-            hex::decode(token.checksum_wallet)?.as_slice(),
-        )?);
-
-        Ok(Self {
-            wallet,
-            email: Some(token.email),
-            name: None,
-            role: None,
-            telegram: None,
-            twitter: None,
-            bio: None,
-            avatar: None,
-        })
     }
 }
 
@@ -444,60 +435,46 @@ impl OAuthToken {
     }
 }
 
-/// Registration JWT token used to register User's profile first time in AirDao DB
+/// Email confirmation JWT token used to set or update email to User's profile in AirDao DB
 #[derive(Debug, Serialize, Deserialize)]
-pub struct UserRegistrationToken {
+pub struct UserEmailConfirmationToken {
     pub token: String,
 }
 
-/// Registration JWT token's claims struct with User's basic profile info
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RawUserRegistrationToken {
-    /// User's wallet address
-    #[serde(rename = "wallet")]
-    pub checksum_wallet: String,
-    /// User's email
-    pub email: serde_email::Email,
-    /// Expiration date in millis after registration token will become invalid
-    pub expires_at: u64,
-}
-
-impl RawUserRegistrationToken {
-    /// Verifies that registration token is not expired
-    pub fn verify(&self) -> bool {
-        self.expires_at > Utc::now().timestamp_millis() as u64
-    }
-}
-
-impl UserRegistrationToken {
-    /// Creates new registration JWT token for a User
-    pub fn new(token: RawUserRegistrationToken, secret: &[u8]) -> Result<Self, anyhow::Error> {
+impl UserEmailConfirmationToken {
+    /// Creates new email confirmation JWT token for a User
+    pub fn new(
+        wallet: Address,
+        old_email: Option<&serde_email::Email>,
+        email: &serde_email::Email,
+        lifetime: std::time::Duration,
+        secret: &[u8],
+    ) -> Result<Self, anyhow::Error> {
         jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
-            &token,
+            &serde_json::json!({
+                "wallet": utils::get_checksum_address(&wallet),
+                "oldEmail": old_email,
+                "email": email,
+                "exp": (Utc::now() + lifetime).timestamp(),
+            }),
             &jsonwebtoken::EncodingKey::from_secret(secret),
         )
         .map_err(anyhow::Error::from)
         .map(|token| Self { token })
     }
 
-    /// Verifies that registration JWT token is valid and not expired. Returns User's basic profile info
-    pub fn verify(&self, secret: &[u8]) -> Result<RawUserRegistrationToken, anyhow::Error> {
-        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::default());
-        validation.set_required_spec_claims(&<[&str; 0]>::default());
+    /// Validates that verification email JWT token is valid and not expired. Returns [`UserInfo`]
+    pub fn verify(&self, secret: &[u8]) -> Result<UserInfo, anyhow::Error> {
+        let validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::default());
 
-        let token_data = jsonwebtoken::decode::<RawUserRegistrationToken>(
+        let token_data = jsonwebtoken::decode::<UserInfo>(
             &self.token,
             &jsonwebtoken::DecodingKey::from_secret(secret),
             &validation,
         )?;
 
-        if !token_data.claims.verify() {
-            Err(anyhow::Error::msg("Registration token expired"))
-        } else {
-            Ok(token_data.claims)
-        }
+        Ok(token_data.claims)
     }
 }
 
@@ -508,11 +485,28 @@ pub struct UserDbConfig {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct EmailVerificationRequest {
+pub struct SendEmailRequest {
+    pub kind: SendEmailRequestKind,
     pub from: EmailFrom,
     pub subject: String,
     pub to: serde_email::Email,
     pub verification_url: url::Url,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SendEmailRequestKind {
+    EmailVerification,
+    EmailChange,
+}
+
+impl SendEmailRequestKind {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::EmailVerification => "email_verification",
+            Self::EmailChange => "email_change",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -810,6 +804,7 @@ mod tests {
             wallet: Address::from_low_u64_le(0),
             name: Some("test".to_owned()),
             role: Some("test".to_owned()),
+            old_email: None,
             email: Some(Email::from_str("test@test.com").unwrap()),
             telegram: None,
             twitter: None,

@@ -7,8 +7,8 @@ use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
 use shared::common::{
-    EmailVerificationRequest, SessionToken, UserInfo, UserProfile, UserProfileStatus,
-    UserRegistrationToken,
+    SendEmailRequest, SendEmailRequestKind, SessionToken, UserEmailConfirmationToken, UserInfo,
+    UserProfile, UserProfileStatus,
 };
 
 use crate::{
@@ -91,12 +91,41 @@ pub struct UpdateUserRequest {
     pub session: SessionToken,
 }
 
-/// JSON-serialized request passed as POST-data to `/verify-email` endpoint to generate registration JWT token
+/// JSON-serialized request passed as POST-data to `/verify-email` endpoint to send email verification link to user's email
 #[derive(Debug, Deserialize)]
 pub struct VerifyEmailRequest {
-    pub email: serde_email::Email,
+    #[serde(flatten)]
+    pub kind: VerifyEmailRequestKind,
     #[serde(flatten)]
     pub session: SessionToken,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum VerifyEmailRequestKind {
+    EmailChange {
+        old_email: serde_email::Email,
+        email: serde_email::Email,
+    },
+    EmailVerification {
+        email: serde_email::Email,
+    },
+}
+
+impl VerifyEmailRequest {
+    fn old_email(&self) -> Option<&serde_email::Email> {
+        match &self.kind {
+            VerifyEmailRequestKind::EmailChange { old_email, .. } => Some(old_email),
+            _ => None,
+        }
+    }
+
+    fn email(&self) -> &serde_email::Email {
+        match &self.kind {
+            VerifyEmailRequestKind::EmailChange { email, .. } => email,
+            VerifyEmailRequestKind::EmailVerification { email } => email,
+        }
+    }
 }
 
 pub async fn start(config: AppConfig, users_manager: Arc<UsersManager>) -> Result<(), AppError> {
@@ -114,7 +143,7 @@ pub async fn start(config: AppConfig, users_manager: Arc<UsersManager>) -> Resul
         .route("/verify-email", post(verify_email_route))
         .route("/quiz", post(quiz_route))
         .route("/verify-quiz", post(verify_quiz_route))
-        .route("/register", post(register_route))
+        .route("/update-email", post(update_email_route))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -271,11 +300,22 @@ async fn update_user_route(
     res.map(Json)
 }
 
-/// Route handler to generate registration JWT token for User which could be send to an email
+/// Route handler to generate email verification JWT token and send it to user's email address
 async fn verify_email_route(
     State(state): State<AppState>,
     Json(req): Json<VerifyEmailRequest>,
 ) -> Result<Json<()>, String> {
+    let old_email = req.old_email();
+    let email = req.email();
+    if old_email == Some(email) {
+        return Err("Email shouldn't be the same".to_string());
+    }
+
+    let kind = match old_email {
+        Some(_) => SendEmailRequestKind::EmailChange,
+        None => SendEmailRequestKind::EmailVerification,
+    };
+
     tracing::debug!("[/verify-email] Request {req:?}");
 
     let res = match state
@@ -284,33 +324,38 @@ async fn verify_email_route(
         .and_then(|wallet| {
             state
                 .users_manager
-                .acquire_registration_token(wallet, req.email.clone())
+                .acquire_email_confirmation_token(wallet, old_email, email)
         })
         .map_err(|e| format!("Verify email request failure. Error: {e}"))
-        .and_then(|UserRegistrationToken { token }| {
+        .and_then(|UserEmailConfirmationToken { token }| {
             url::Url::try_from(
                 state
                     .config
                     .users_manager
                     .email_verification
                     .template_url
-                    .replace("{{REGISTRATION_TOKEN}}", &token)
+                    .replace("{{VERIFICATION_TOKEN}}", &token)
                     .as_str(),
             )
             .map_err(|e| format!("Failed to create verification link. Error: {e:?}"))
-        })
-        .map(|url| EmailVerificationRequest {
-            from: state.config.users_manager.email_verification.from.clone(),
-            to: req.email,
-            subject: state
-                .config
-                .users_manager
-                .email_verification
-                .subject
-                .clone(),
-            verification_url: url,
         }) {
-        Ok(req) => state.users_manager.send_email_verification(req).await,
+        Ok(url) => {
+            state
+                .users_manager
+                .send_email_verification(SendEmailRequest {
+                    kind,
+                    from: state.config.users_manager.email_verification.from.clone(),
+                    to: email.clone(),
+                    subject: state
+                        .config
+                        .users_manager
+                        .email_verification
+                        .subject
+                        .clone(),
+                    verification_url: url,
+                })
+                .await
+        }
         Err(e) => Err(e),
     };
 
@@ -319,28 +364,41 @@ async fn verify_email_route(
     res.map(Json)
 }
 
-/// Route handler to register new User with basic profile
-async fn register_route(
+/// Route handler to register a user or update User profile with new email
+async fn update_email_route(
     State(state): State<AppState>,
-    Json(reg_token): Json<UserRegistrationToken>,
-) -> Result<Json<UserInfo>, String> {
-    tracing::debug!("[/register] Request {reg_token:?}");
+    Json(reg_token): Json<UserEmailConfirmationToken>,
+) -> Result<Json<()>, String> {
+    tracing::debug!("[/update-email] Request {reg_token:?}");
 
-    // TODO: fetch user information from MongoDB
-    let res = match state.users_manager.verify_registration_token(&reg_token) {
-        Ok(user) => {
-            state
-                .users_manager
-                .register_user(&user)
-                .await
-                .map_err(|e| format!("User registration failure. Error: {e}"))?;
-            Ok(user)
-        }
+    let res = match state
+        .users_manager
+        .verify_email_confirmation_token(&reg_token)
+    {
+        Ok(
+            info @ UserInfo {
+                old_email: None, ..
+            },
+        ) => state
+            .users_manager
+            .register_user(&info)
+            .await
+            .map_err(|e| format!("User registration failure. Error: {e}")),
 
-        Err(e) => Err(format!("Wrong registration request. Error: {e}")),
+        Ok(
+            info @ UserInfo {
+                old_email: Some(_), ..
+            },
+        ) => state
+            .users_manager
+            .update_user(info)
+            .await
+            .map_err(|e| format!("User email update failure. Error: {e}")),
+
+        Err(e) => Err(format!("Wrong email update request. Error: {e}")),
     };
 
-    tracing::debug!("[/register] Response {res:?}");
+    tracing::debug!("[/update-email] Response {res:?}");
 
     res.map(Json)
 }
@@ -351,6 +409,7 @@ impl UpdateUserRequest {
             wallet,
             name: self.name,
             role: self.role,
+            old_email: None,
             email: None,
             telegram: self.telegram,
             twitter: self.twitter,

@@ -21,16 +21,16 @@ impl SendGridClient {
 
     pub async fn send(
         &self,
-        from: EmailFrom,
-        text: String,
-        subject: String,
-        to: serde_email::Email,
+        from: &EmailFrom,
+        text: &str,
+        subject: &str,
+        to: &serde_email::Email,
     ) -> anyhow::Result<()> {
         let mail = Mail::new()
             .add_from(from.email.as_str())
             .add_from_name(from.name.as_str())
-            .add_html(text.as_str())
-            .add_subject(subject.as_str())
+            .add_html(text)
+            .add_subject(subject)
             .add_to((to.as_str(), "").into());
 
         let res = self.inner.send(mail).await?;

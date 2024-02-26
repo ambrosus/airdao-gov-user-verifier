@@ -60,6 +60,18 @@
             }
         }
 
+        function updateEmail() {
+            const session = sessionStorage.getItem("airdao-gov-user-session");
+            const wallet = session ? parseJwtAndVerify(session) : null;
+
+            if (!wallet) {
+                sessionStorage.removeItem("airdao-gov-user-session");
+                window.location.replace("/");
+            } else {
+                window.location.replace(`/assign-email?session=${session}`);
+            }
+        }
+
         setTimeout(() => {
             const session = new URLSearchParams(window.location.search).get("session");
             if (parseJwtAndVerify(session)) {
@@ -99,6 +111,7 @@
         <p>
             <label for="email">Email:</label>
             <input type="text" id="email" name="email" value="{{USER_EMAIL}}" disabled="true" maxlength="64" size="64" />
+            <button id="idUpdateEmail" onclick="updateEmail()">Change</button>
         </p>
         <p>
             <label for="telegram">Telegram:</label>
