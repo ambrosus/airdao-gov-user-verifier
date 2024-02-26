@@ -1,0 +1,10 @@
+FROM debian:bullseye-slim
+
+WORKDIR /app
+
+COPY --from=ghcr.io/ambrosus/airdao-gov-user-binary:main /tmp/builder/target/release/airdao-gov-portal-mailer .
+COPY --from=ghcr.io/ambrosus/airdao-gov-user-binary:main /tmp/builder/mailer /app/mailer
+
+RUN apt-get update && apt-get install -y lsb-release ca-certificates libssl-dev && apt-get clean all
+
+CMD ["./airdao-gov-portal-mailer"]
