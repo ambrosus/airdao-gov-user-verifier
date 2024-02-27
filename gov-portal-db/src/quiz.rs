@@ -175,7 +175,10 @@ impl Quiz {
                     .cloned()
                     .unwrap_or_default()
         {
-            QuizResult::Solved
+            QuizResult::Solved(
+                total_valid_answers,
+                self.config.minimum_total_valid_answers_required,
+            )
         } else {
             QuizResult::Failed(
                 total_valid_answers,
@@ -381,7 +384,7 @@ mod tests {
         {
             match serde_json::from_str::<Vec<QuizAnswer>>(input) {
                 Ok(answers) => assert_eq!(
-                    quiz.verify_answers(answers) == QuizResult::Solved,
+                    matches!(quiz.verify_answers(answers), QuizResult::Solved(..)),
                     expected,
                     "Test case #{i} '{title}' failed!"
                 ),

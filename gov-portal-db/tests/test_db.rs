@@ -164,7 +164,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
         .unwrap(),
     ]);
 
-    assert_matches!(quiz_result, QuizResult::Solved);
+    assert_matches!(quiz_result, QuizResult::Solved(2, 2));
 
     let addr_1 = Address::from_low_u64_le(0);
 

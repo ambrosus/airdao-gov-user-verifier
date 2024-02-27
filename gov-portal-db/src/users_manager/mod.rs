@@ -89,8 +89,9 @@ impl Default for UserProfileAttributes {
 
 #[derive(Debug, PartialEq)]
 pub enum QuizResult {
-    Solved,
+    Solved(u64, u64),
     Failed(u64, u64, DateTime<Utc>),
+    AlreadySolved,
 }
 
 impl Serialize for QuizResult {
@@ -99,7 +100,12 @@ impl Serialize for QuizResult {
         S: Serializer,
     {
         match self {
-            Self::Solved => serializer.serialize_none(),
+            Self::Solved(valid_answers, required_answers) => {
+                let mut seq = serializer.serialize_seq(Some(2))?;
+                seq.serialize_element(valid_answers)?;
+                seq.serialize_element(required_answers)?;
+                seq.end()
+            }
             Self::Failed(valid_answers, required_answers, blocked_until) => {
                 let mut seq = serializer.serialize_seq(Some(3))?;
                 seq.serialize_element(valid_answers)?;
@@ -107,6 +113,7 @@ impl Serialize for QuizResult {
                 seq.serialize_element(&blocked_until.timestamp_millis())?;
                 seq.end()
             }
+            Self::AlreadySolved => serializer.serialize_none(),
         }
     }
 }
@@ -225,12 +232,8 @@ impl UsersManager {
         wallet: Address,
         quiz_result: &QuizResult,
     ) -> Result<(), error::Error> {
-        let query = doc! {
-            "wallet": bson::to_bson(&wallet)?,
-        };
-
         let update = match quiz_result {
-            QuizResult::Solved => {
+            QuizResult::Solved(..) => {
                 doc! {
                     "$set": bson::to_bson(&RawUserProfile {
                         quiz_solved: Some(true),
@@ -268,6 +271,11 @@ impl UsersManager {
                     })?
                 }
             }
+            QuizResult::AlreadySolved => return Ok(()),
+        };
+
+        let query = doc! {
+            "wallet": bson::to_bson(&wallet)?,
         };
 
         let options = UpdateOptions::builder().upsert(false).build();
@@ -449,8 +457,8 @@ mod tests {
     #[test]
     fn test_ser_quiz_result() {
         assert_matches!(
-            serde_json::to_string(&QuizResult::Solved).as_deref(),
-            Ok("null")
+            serde_json::to_string(&QuizResult::Solved(4, 5)).as_deref(),
+            Ok("[4,5]")
         );
 
         assert_matches!(
@@ -462,7 +470,12 @@ mod tests {
                 )
             ))
             .as_deref(),
-            Ok(r#"[3,5,1708997209002]"#)
+            Ok("[3,5,1708997209002]")
+        );
+
+        assert_matches!(
+            serde_json::to_string(&QuizResult::AlreadySolved).as_deref(),
+            Ok("null")
         );
     }
 

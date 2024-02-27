@@ -254,7 +254,7 @@ async fn verify_quiz_route(
                 }
                 | UserProfileStatus::Complete(_),
             ..
-        }) => Ok(QuizResult::Solved),
+        }) => Ok(QuizResult::AlreadySolved),
         // Do not allow to solve quiz if temporarily blocked
         Ok(UserProfile {
             status: UserProfileStatus::Blocked { blocked_until },
