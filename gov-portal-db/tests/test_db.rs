@@ -189,7 +189,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
     );
 
     users_manager
-        .update_user_quiz_result(addr_1, quiz_result)
+        .update_user_quiz_result(addr_1, &quiz_result)
         .await?;
 
     // Verify that newly registered user has incomplete profile status with solved quiz
