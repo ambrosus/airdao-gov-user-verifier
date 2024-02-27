@@ -177,7 +177,11 @@ impl Quiz {
         {
             QuizResult::Solved
         } else {
-            QuizResult::Failed(Utc::now() + self.config.failed_quiz_block_duration)
+            QuizResult::Failed(
+                total_valid_answers,
+                self.config.minimum_total_valid_answers_required,
+                Utc::now() + self.config.failed_quiz_block_duration,
+            )
         }
     }
 }

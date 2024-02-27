@@ -10,7 +10,7 @@ use mongodb::{
     options::{FindOptions, UpdateOptions},
     results::UpdateResult,
 };
-use serde::Deserialize;
+use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use tokio::time::Duration;
 
 use shared::{
@@ -90,7 +90,25 @@ impl Default for UserProfileAttributes {
 #[derive(Debug, PartialEq)]
 pub enum QuizResult {
     Solved,
-    Failed(DateTime<Utc>),
+    Failed(u64, u64, DateTime<Utc>),
+}
+
+impl Serialize for QuizResult {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Solved => serializer.serialize_none(),
+            Self::Failed(valid_answers, required_answers, blocked_until) => {
+                let mut seq = serializer.serialize_seq(Some(3))?;
+                seq.serialize_element(valid_answers)?;
+                seq.serialize_element(required_answers)?;
+                seq.serialize_element(&blocked_until.timestamp_millis())?;
+                seq.end()
+            }
+        }
+    }
 }
 
 /// User profiles manager which provides read/write access to user profile data stored MongoDB
@@ -205,7 +223,7 @@ impl UsersManager {
     pub async fn update_user_quiz_result(
         &self,
         wallet: Address,
-        quiz_result: QuizResult,
+        quiz_result: &QuizResult,
     ) -> Result<(), error::Error> {
         let query = doc! {
             "wallet": bson::to_bson(&wallet)?,
@@ -231,7 +249,7 @@ impl UsersManager {
                     })?
                 }
             }
-            QuizResult::Failed(block_until) => {
+            QuizResult::Failed(_, _, block_until) => {
                 doc! {
                     "$set": bson::to_bson(&RawUserProfile {
                         quiz_solved: Some(false),
@@ -423,7 +441,30 @@ fn is_key_duplication_error(error_kind: &MongoErrorKind) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::UsersManagerConfig;
+    use assert_matches::assert_matches;
+    use chrono::{NaiveDateTime, TimeZone, Utc};
+
+    use super::{QuizResult, UsersManagerConfig};
+
+    #[test]
+    fn test_ser_quiz_result() {
+        assert_matches!(
+            serde_json::to_string(&QuizResult::Solved).as_deref(),
+            Ok("null")
+        );
+
+        assert_matches!(
+            serde_json::to_string(&QuizResult::Failed(
+                3,
+                5,
+                Utc.from_utc_datetime(
+                    &NaiveDateTime::from_timestamp_millis(1708997209002).unwrap()
+                )
+            ))
+            .as_deref(),
+            Ok(r#"[3,5,1708997209002]"#)
+        );
+    }
 
     #[test]
     fn test_user_registration_config() {

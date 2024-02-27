@@ -16,7 +16,7 @@ use crate::{
     error::AppError,
     quiz::{Quiz, QuizAnswer, QuizQuestion},
     session_token::SessionManager,
-    users_manager::UsersManager,
+    users_manager::{QuizResult, UsersManager},
 };
 
 /// State shared between route handlers
@@ -226,7 +226,7 @@ async fn quiz_route(
 async fn verify_quiz_route(
     State(state): State<AppState>,
     Json(quiz_req): Json<VerifyQuizRequest>,
-) -> Result<Json<()>, String> {
+) -> Result<Json<QuizResult>, String> {
     tracing::debug!("[/verify-quiz] Request {:?}", quiz_req);
 
     let token_res = match &quiz_req {
@@ -254,7 +254,7 @@ async fn verify_quiz_route(
                 }
                 | UserProfileStatus::Complete(_),
             ..
-        }) => Ok(()),
+        }) => Ok(QuizResult::Solved),
         // Do not allow to solve quiz if temporarily blocked
         Ok(UserProfile {
             status: UserProfileStatus::Blocked { blocked_until },
@@ -262,14 +262,16 @@ async fn verify_quiz_route(
         }) if blocked_until > Utc::now().timestamp_millis() as u64 => {
             Err("User is temporarily blocked!".to_string())
         }
-        Ok(user) => state
-            .users_manager
-            .update_user_quiz_result(
-                user.info.wallet,
-                state.quiz.verify_answers(quiz_req.answers),
-            )
-            .await
-            .map_err(|e| format!("Update user profile with quiz results failure. Error: {e}")),
+        Ok(user) => {
+            let quiz_result = state.quiz.verify_answers(quiz_req.answers);
+
+            state
+                .users_manager
+                .update_user_quiz_result(user.info.wallet, &quiz_result)
+                .await
+                .map_err(|e| format!("Update user profile with quiz results failure. Error: {e}"))
+                .map(|_| quiz_result)
+        }
         Err(e) => Err(format!("Verify quiz request failure. Error: {e}")),
     };
 
