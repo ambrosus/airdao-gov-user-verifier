@@ -86,7 +86,7 @@ impl FractalClient {
                     status: UserStatus {
                         uniqueness: user.get_status(&[
                             VerificationLevel::Uniqueness,
-                            VerificationLevel::Liveness,
+                            // VerificationLevel::Liveness, this causes long verification process on Fractal side
                             VerificationLevel::WalletEth,
                         ]),
                         basic: user
