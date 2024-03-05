@@ -17,9 +17,7 @@
             "telegramMaxLength": 32,
             "twitterMaxLength": 32,
             "bioMaxLength": 250,
-            "bioMinLength": 2,
-            "avatarUrlMaxLength": 250,
-            "avatarUrlMinLength": 7
+            "bioMinLength": 2
         },
         "emailVerification": {
             "mailerBaseUrl": null,

@@ -1,8 +1,9 @@
 use base64::{engine::general_purpose, Engine};
 use chrono::{DateTime, TimeZone, Utc};
+use cid::Cid;
 use ethabi::{encode, Address, ParamType, Token};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use std::time::Duration;
+use std::{fmt::Display, str::FromStr, time::Duration};
 
 use crate::utils::{self, convert_to_claims_with_expiration, decode_sbt_request};
 
@@ -80,8 +81,12 @@ pub struct UserInfo {
     pub twitter: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bio: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub avatar: Option<url::Url>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "utils::de_opt_cid"
+    )]
+    pub avatar: Option<WrappedCid>,
 }
 
 impl UserInfo {
@@ -516,15 +521,56 @@ pub struct EmailFrom {
     pub name: String,
 }
 
+/// This type represents a wrapped serializable version of [`Cid`]
+#[derive(Debug, Clone, PartialEq)]
+pub struct WrappedCid(pub Cid);
+
+impl WrappedCid {
+    /// Creates [`WrappedCid`] from ref string
+    pub fn new(cid: &str) -> anyhow::Result<Self> {
+        Cid::from_str(cid)
+            .map_err(|_| anyhow::anyhow!("Not a valid Cid"))
+            .map(WrappedCid)
+    }
+}
+
+impl Display for WrappedCid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for WrappedCid {
+    fn deserialize<D>(deserializer: D) -> Result<WrappedCid, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let cid_text = <String as Deserialize>::deserialize(deserializer)?;
+
+        Cid::from_str(&cid_text)
+            .map(WrappedCid)
+            .map_err(|e| de::Error::custom(format!("Failed to deserialize CID: {e:?}")))
+    }
+}
+
+impl Serialize for WrappedCid {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{str::FromStr, time::Duration};
+    use std::time::Duration;
 
     use chrono::Utc;
     use ethereum_types::Address;
     use serde_email::Email;
 
-    use super::{RawUserProfile, UserProfile, UserProfileStatus};
+    use super::{RawUserProfile, UserProfile, UserProfileStatus, WrappedCid};
     use crate::common::{CompletionToken, UserInfo};
 
     #[test]
@@ -799,6 +845,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_cid() {
+        let _ = WrappedCid::new("QmRKs2ZfuwvmZA3QAWmCqrGUjV9pxtBUDP3wuc6iVGnjA2").unwrap();
+        assert!(WrappedCid::new("QmRKs2ZfuwvmZA3QAWmCqrGUjV9pxtBUDP3wuc6iVGnjA23").is_err());
+        let _ =
+            WrappedCid::new("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi").unwrap();
+        assert!(
+            WrappedCid::new("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzd1").is_err()
+        );
+    }
+
     fn default_user_info() -> UserInfo {
         UserInfo {
             wallet: Address::from_low_u64_le(0),
@@ -809,7 +866,10 @@ mod tests {
             telegram: None,
             twitter: None,
             bio: Some("test bio".to_owned()),
-            avatar: Some(url::Url::from_str("http://test.com").unwrap()),
+            avatar: Some(
+                WrappedCid::new("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi")
+                    .unwrap(),
+            ),
         }
     }
 }

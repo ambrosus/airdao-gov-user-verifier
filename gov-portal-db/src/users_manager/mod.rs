@@ -64,8 +64,6 @@ pub struct UserProfileAttributes {
     pub twitter_max_length: usize,
     pub bio_max_length: usize,
     pub bio_min_length: usize,
-    pub avatar_url_max_length: usize,
-    pub avatar_url_min_length: usize,
 }
 
 impl Default for UserProfileAttributes {
@@ -81,8 +79,6 @@ impl Default for UserProfileAttributes {
             twitter_max_length: 32,
             bio_max_length: 250,
             bio_min_length: 2,
-            avatar_url_max_length: 250,
-            avatar_url_min_length: 7, // length("a://a.a")
         }
     }
 }
@@ -393,17 +389,6 @@ impl UsersManager {
             )));
         }
 
-        if user.avatar.as_ref().is_some_and(|value| {
-            value.as_str().len() < self.config.user_profile_attributes.avatar_url_min_length
-                || value.as_str().len() > self.config.user_profile_attributes.avatar_url_max_length
-        }) {
-            return Err(error::Error::InvalidInput(format!(
-                "Avatar URL doesn't met requirements (min: {}, max: {})",
-                self.config.user_profile_attributes.avatar_url_min_length,
-                self.config.user_profile_attributes.avatar_url_max_length
-            )));
-        }
-
         Ok(())
     }
 
@@ -496,9 +481,7 @@ mod tests {
                     "telegramMaxLength": 32,
                     "twitterMaxLength": 32,
                     "bioMaxLength": 250,
-                    "bioMinLength": 2,
-                    "avatarUrlMaxLength": 250,
-                    "avatarUrlMinLength": 7
+                    "bioMinLength": 2
                 },
                 "emailVerification": {
                     "mailerBaseUrl": "http://localhost:10002",

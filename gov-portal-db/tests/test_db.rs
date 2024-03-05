@@ -1,12 +1,11 @@
 #![cfg(feature = "enable-integration-tests")]
-use std::str::FromStr;
 
 use airdao_gov_portal_db::{
     quiz::{Quiz, QuizAnswer, QuizConfig},
     users_manager::{EmailVerificationConfig, *},
 };
 use assert_matches::assert_matches;
-use shared::common::{EmailFrom, UserInfo, UserProfile, UserProfileStatus};
+use shared::common::{EmailFrom, UserInfo, UserProfile, UserProfileStatus, WrappedCid};
 use web3::types::Address;
 
 #[tokio::test]
@@ -210,7 +209,9 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
             name: Some("some name".to_owned()),
             role: Some("some role".to_owned()),
             bio: Some("some bio".to_owned()),
-            avatar: Some(url::Url::from_str("http://avatar.link")?),
+            avatar: Some(WrappedCid::new(
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            )?),
             ..default_user_info()
         })
         .await?;

@@ -8,7 +8,7 @@ use tower_http::cors::CorsLayer;
 
 use shared::common::{
     SendEmailRequest, SendEmailRequestKind, SessionToken, UserEmailConfirmationToken, UserInfo,
-    UserProfile, UserProfileStatus,
+    UserProfile, UserProfileStatus, WrappedCid,
 };
 
 use crate::{
@@ -86,7 +86,7 @@ pub struct UpdateUserRequest {
     #[serde(default)]
     pub bio: Option<String>,
     #[serde(default)]
-    pub avatar: Option<url::Url>,
+    pub avatar: Option<WrappedCid>,
     #[serde(flatten)]
     pub session: SessionToken,
 }

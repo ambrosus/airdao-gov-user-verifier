@@ -16,7 +16,7 @@ use tower_http::cors::CorsLayer;
 use shared::{
     common::{
         ApprovedResponse, PendingResponse, SBTRequest, SessionToken, SignedSBTRequest,
-        UserDbConfig, UserInfo, UserProfile, VerifyAccountResponse,
+        UserDbConfig, UserInfo, UserProfile, VerifyAccountResponse, WrappedCid,
     },
     logger, utils,
 };
@@ -96,7 +96,7 @@ pub enum UpdateUserQuery {
         telegram: Option<String>,
         twitter: Option<String>,
         bio: Option<String>,
-        avatar: Option<String>,
+        avatar: Box<Option<WrappedCid>>,
     },
     NoJwtToken {},
 }
@@ -219,10 +219,11 @@ async fn index_route(
                         &utils::get_checksum_address(&user.wallet),
                     )
                     .replace(
-                        "{{USER_AVATAR_URL}}",
-                        user.avatar
+                        "{{USER_AVATAR_CID}}",
+                        &user
+                            .avatar
                             .as_ref()
-                            .map(|url| url.as_str())
+                            .map(|cid| cid.to_string())
                             .unwrap_or_default(),
                     )
                     .replace("{{USER_NAME}}", user.name.as_deref().unwrap_or_default())
@@ -264,7 +265,7 @@ async fn update_user_route(
             bio,
             avatar,
         } => match state
-            .update_user(&token, name, role, telegram, twitter, bio, avatar)
+            .update_user(&token, name, role, telegram, twitter, bio, *avatar)
             .and_then(|_| state.get_user(&token))
             .await
         {
@@ -299,10 +300,11 @@ async fn update_user_route(
                         &utils::get_checksum_address(&user.wallet),
                     )
                     .replace(
-                        "{{USER_AVATAR_URL}}",
-                        user.avatar
+                        "{{USER_AVATAR_CID}}",
+                        &user
+                            .avatar
                             .as_ref()
-                            .map(|url| url.as_str())
+                            .map(|cid| cid.to_string())
                             .unwrap_or_default(),
                     )
                     .replace("{{USER_NAME}}", user.name.as_deref().unwrap_or_default())
@@ -596,12 +598,8 @@ impl AppState {
         telegram: Option<String>,
         twitter: Option<String>,
         bio: Option<String>,
-        avatar: Option<String>,
+        avatar: Option<WrappedCid>,
     ) -> Result<(), anyhow::Error> {
-        let avatar = match avatar {
-            Some(avatar_url) => Some(url::Url::parse(&avatar_url)?),
-            None => None,
-        };
         let raw_data = self
             .client
             .post(&[&self.config.user_db.base_url, "/update-user"].concat())

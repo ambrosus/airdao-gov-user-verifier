@@ -30,6 +30,7 @@ tower-http = { version = "0", features = ["cors"] }
 reqwest = { version = "0", features = ["rustls-tls", "json", "deflate"] }
 jsonwebtoken = "9"
 url = { version = "2", features = ["serde"] }
+cid = "0"
 
 # SerDe
 serde = { version = "1", features = ["derive"] }

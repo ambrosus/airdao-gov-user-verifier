@@ -7,9 +7,9 @@ use k256::{ecdsa::RecoveryId, elliptic_curve::scalar::ScalarPrimitive, Secp256k1
 use log::error;
 use serde::de::{self, Deserialize, DeserializeOwned};
 use sha3::{Digest, Keccak256};
-use std::{panic, path::PathBuf, thread, time::Duration};
+use std::{panic, path::PathBuf, str::FromStr, thread, time::Duration};
 
-use crate::common::{SBTRequest, WalletSignedMessage};
+use crate::common::{SBTRequest, WalletSignedMessage, WrappedCid};
 
 pub async fn load_config<T: DeserializeOwned>(root: &str) -> Result<T, ConfigError> {
     let root = PathBuf::from(root);
@@ -217,11 +217,87 @@ pub fn parse_json_response<T: DeserializeOwned>(text: String) -> Result<T, Strin
     Err(text)
 }
 
+pub fn de_opt_cid<'de, D>(deserializer: D) -> Result<Option<WrappedCid>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let data = String::deserialize(deserializer)?;
+    let maybe_url = url::Url::from_str(&data);
+    let maybe_cid = maybe_url
+        .as_ref()
+        .ok()
+        .and_then(|url| url.path_segments().into_iter().last())
+        .and_then(|cid| cid.last())
+        .unwrap_or(data.as_str());
+
+    match WrappedCid::new(maybe_cid) {
+        Ok(cid) => Ok(Some(cid)),
+        // In case of valid url with invalid CID, we assume it is not provided, e.g. `https://ipfs.io/ipfs/undefined`
+        Err(_) if maybe_url.is_ok() => Ok(None),
+        Err(e) => Err(de::Error::custom(format!(
+            "Failed to deserialize Cid from '{data}'. Error: {e}"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Utc;
+    use serde::de::IntoDeserializer;
     use std::str::FromStr;
+
+    #[test]
+    fn test_de_opt_cid() {
+        struct TestCase<'a> {
+            input: &'a str,
+            expected: Result<Option<WrappedCid>, String>,
+        }
+
+        let test_cases = [
+            TestCase {
+                input: "https://ipfs.io/ipfs/undefined",
+                expected: Ok(None),
+            },
+            TestCase {
+                input: "https://ipfs.io/ipfs/QmRKs2ZfuwvmZA3QAWmCqrGUjV9pxtBUDP3wuc6iVGnjA23",
+                expected: Ok(None),
+            },
+            TestCase {
+                input: "https://ipfs.io/ipfs/QmRKs2ZfuwvmZA3QAWmCqrGUjV9pxtBUDP3wuc6iVGnjA2",
+                expected: Ok(Some(WrappedCid::new("QmRKs2ZfuwvmZA3QAWmCqrGUjV9pxtBUDP3wuc6iVGnjA2").unwrap())),
+            },
+            TestCase {
+                input: "https://ipfs.io/ipfs/bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+                expected: Ok(Some(WrappedCid::new("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi").unwrap())),
+            },
+            TestCase {
+                input: "QmRKs2ZfuwvmZA3QAWmCqrGUjV9pxtBUDP3wuc6iVGnjA23",
+                expected: Err("Failed to deserialize Cid from 'QmRKs2ZfuwvmZA3QAWmCqrGUjV9pxtBUDP3wuc6iVGnjA23'. Error: Not a valid Cid".to_owned()),
+            },
+            TestCase {
+                input: "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi1",
+                expected: Err("Failed to deserialize Cid from 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi1'. Error: Not a valid Cid".to_owned()),
+            },
+            TestCase {
+                input: "QmRKs2ZfuwvmZA3QAWmCqrGUjV9pxtBUDP3wuc6iVGnjA2",
+                expected: Ok(Some(WrappedCid::new("QmRKs2ZfuwvmZA3QAWmCqrGUjV9pxtBUDP3wuc6iVGnjA2").unwrap())),
+            },
+            TestCase {
+                input: "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+                expected: Ok(Some(WrappedCid::new("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi").unwrap())),
+            },
+        ];
+
+        for (i, test_case) in test_cases.into_iter().enumerate() {
+            assert_eq!(
+                de_opt_cid(test_case.input.into_deserializer())
+                    .map_err(|e: serde_json::Error| e.to_string()),
+                test_case.expected,
+                "Test case #{i}"
+            );
+        }
+    }
 
     #[test]
     fn test_get_eth_address() {
