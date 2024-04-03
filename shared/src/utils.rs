@@ -11,6 +11,8 @@ use std::{panic, path::PathBuf, str::FromStr, thread, time::Duration};
 
 use crate::common::{SBTRequest, WalletSignedMessage, WrappedCid};
 
+const RECOVERABLE_ECDSA_SIGNATURE_LENGTH: usize = 65;
+
 pub async fn load_config<T: DeserializeOwned>(root: &str) -> Result<T, ConfigError> {
     let root = PathBuf::from(root);
     let default = root.join("config/default");
@@ -147,6 +149,10 @@ pub fn recover_eth_address(
     let message_hash = keccak256_hash_message_with_eth_prefix(decoded_message);
 
     let signature = hex::decode(signed_message.sign)?;
+    if signature.len() != RECOVERABLE_ECDSA_SIGNATURE_LENGTH {
+        return Err(anyhow::Error::msg("Invalid signature length"));
+    }
+
     let recovery_id = RecoveryId::from_byte((signature[64] as i32 - 27) as u8)
         .ok_or_else(|| anyhow::Error::msg("Invalid reconvery param"))?;
 
