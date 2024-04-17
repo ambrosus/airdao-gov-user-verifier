@@ -419,6 +419,30 @@ impl UsersManager {
             )),
         }
     }
+
+    /// Checks if email already being used by some user
+    pub async fn is_email_being_used(
+        &self,
+        email: &serde_email::Email,
+    ) -> Result<bool, anyhow::Error> {
+        let filter = doc! {
+            "email": bson::to_bson(&email)?,
+        };
+
+        let find_options = FindOptions::builder()
+            .max_time(self.mongo_client.req_timeout)
+            .build();
+
+        Ok(tokio::time::timeout(self.mongo_client.req_timeout, async {
+            self.mongo_client
+                .find(filter, find_options)
+                .await?
+                .try_next()
+                .await
+        })
+        .await??
+        .is_some())
+    }
 }
 
 /// Returns true if an input error kind [`MongoErrorKind`] is representing duplication error or false otherwise.

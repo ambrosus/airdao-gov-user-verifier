@@ -91,6 +91,14 @@ pub struct UpdateUserRequest {
     pub session: SessionToken,
 }
 
+/// JSON-serialized request passed as POST-data to `/check-email` endpoint
+#[derive(Debug, Deserialize)]
+pub struct CheckEmailRequest {
+    email: serde_email::Email,
+    #[serde(flatten)]
+    pub session: SessionToken,
+}
+
 /// JSON-serialized request passed as POST-data to `/verify-email` endpoint to send email verification link to user's email
 #[derive(Debug, Deserialize)]
 pub struct VerifyEmailRequest {
@@ -140,6 +148,7 @@ pub async fn start(config: AppConfig, users_manager: Arc<UsersManager>) -> Resul
         .route("/token", post(token_route))
         .route("/user", post(user_route))
         .route("/update-user", post(update_user_route))
+        .route("/check-email", post(check_email_route))
         .route("/verify-email", post(verify_email_route))
         .route("/quiz", post(quiz_route))
         .route("/verify-quiz", post(verify_quiz_route))
@@ -298,6 +307,24 @@ async fn update_user_route(
     };
 
     tracing::debug!("[/update-user] Response {res:?}");
+
+    res.map(Json)
+}
+
+/// Route handler to check if an email is already in database
+async fn check_email_route(
+    State(state): State<AppState>,
+    Json(req): Json<CheckEmailRequest>,
+) -> Result<Json<bool>, String> {
+    tracing::debug!("[/check-email] Request {req:?}");
+
+    let res = match state.session_manager.verify_token(&req.session) {
+        Ok(_) => state.users_manager.is_email_being_used(&req.email).await,
+        Err(e) => Err(e),
+    }
+    .map_err(|e| format!("Check email request failure. Error: {e}"));
+
+    tracing::debug!("[/check-email] Response {res:?}");
 
     res.map(Json)
 }
