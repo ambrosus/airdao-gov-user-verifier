@@ -1,0 +1,46 @@
+[package]
+name = "airdao-gov-event-listener"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# Local
+shared = { path = "../shared/" }
+
+# Async
+tokio = { workspace = true }
+futures-util = { workspace = true }
+
+# Ethereum
+ethers.workspace = true
+ethabi.workspace = true
+ethereum-types.workspace = true
+ethers-providers = "2"
+
+# Crypto
+k256.workspace = true
+
+# SerDe
+serde_json.workspace = true
+serde.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+log.workspace = true
+
+# Persistence
+redis.workspace = true
+
+# Misc
+backtrace = { workspace = true }
+config = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+dotenv = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }

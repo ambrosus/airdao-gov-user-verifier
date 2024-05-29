@@ -1,0 +1,12 @@
+{
+    "redis": "redis://localhost:6379",
+    "rpcNode": "https://network.ambrosus.io",
+    "voting": {
+        "artifact": "./artifacts/VotingContracts.json",
+        "contract": null,
+        "registrationDuration": 604800,
+        "discussionDuration": 604800,
+        "votingDuration": 604800
+    },
+    "moderatorKey": null
+}

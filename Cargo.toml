@@ -5,6 +5,7 @@ members = [
     "gov-portal-db",
     "shared",
     "mailer",
+    "gov-voting-oracle",
 ]
 resolver = "2"
 
