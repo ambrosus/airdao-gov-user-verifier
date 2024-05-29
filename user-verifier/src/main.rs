@@ -3,7 +3,6 @@ mod error;
 mod fractal;
 mod server;
 mod signer;
-mod utils;
 mod verification;
 
 use shared::logger;

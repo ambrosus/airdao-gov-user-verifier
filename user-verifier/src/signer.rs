@@ -7,12 +7,12 @@ use tokio::time::Duration;
 
 use shared::utils::encode_sbt_request;
 
-use crate::{error::AppError, utils::de_secp256k1_signing_key};
+use crate::error::AppError;
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SignerConfig {
-    #[serde(deserialize_with = "de_secp256k1_signing_key")]
+    #[serde(deserialize_with = "shared::utils::de_secp256k1_signing_key")]
     pub signing_key: SigningKey,
     #[serde(deserialize_with = "shared::utils::de_secs_duration")]
     pub request_lifetime: Duration,
