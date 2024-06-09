@@ -157,7 +157,7 @@ impl UsersManager {
         }
     }
 
-    /// Searches for a user profile within MongoDB by provided EVM-like address [`Address`] and returns [`User`]
+    /// Searches for a user profile within MongoDB by provided EVM-like address [`Address`] and returns [`UserProfile`]
     pub async fn get_user_by_wallet(&self, wallet: Address) -> Result<UserProfile, error::Error> {
         let filter = doc! {
             "wallet": bson::to_bson(&wallet)?,
@@ -187,6 +187,62 @@ impl UsersManager {
                 self.config.secret.as_bytes(),
             )
             .map_err(error::Error::from)
+        })
+    }
+
+    /// Searches for multiple user profiles within MongoDB by provided EVM-like address [`Address`] list and returns [`Vec<UserProfile>`]
+    pub async fn get_users_by_wallets(
+        &self,
+        wallets: &[Address],
+    ) -> Result<Vec<UserProfile>, error::Error> {
+        if wallets.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let filter = doc! {
+            "wallet": {
+                "$in": bson::to_bson(wallets)?
+            },
+        };
+
+        let find_options = FindOptions::builder()
+            .max_time(self.mongo_client.req_timeout)
+            .build();
+
+        let res = tokio::time::timeout(self.mongo_client.req_timeout, async {
+            let mut stream = self.mongo_client.find(filter, find_options).await?;
+            let mut profiles = Vec::with_capacity(wallets.len());
+            loop {
+                if profiles.len() == wallets.len() {
+                    break;
+                }
+
+                if let Ok(Some(doc)) = stream.try_next().await {
+                    let profile =
+                        bson::from_document::<RawUserProfile>(doc).map_err(error::Error::from)?;
+                    profiles.push(profile);
+                } else {
+                    break;
+                }
+            }
+            Ok(profiles)
+        })
+        .await?;
+
+        tracing::debug!("Get users by wallets ({wallets:?}) result: {res:?}");
+
+        res.and_then(|raw_profiles| {
+            raw_profiles
+                .into_iter()
+                .map(|raw_profile| {
+                    UserProfile::new(
+                        raw_profile,
+                        Utc::now() + self.config.lifetime,
+                        self.config.secret.as_bytes(),
+                    )
+                    .map_err(error::Error::from)
+                })
+                .collect::<Result<_, _>>()
         })
     }
 
