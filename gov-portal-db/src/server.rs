@@ -229,12 +229,11 @@ async fn users_route(
     );
 
     let res = match state.session_manager.verify_token(&req.session) {
-        Ok(_) => state
+        Ok(requestor) => state
             .users_manager
-            .get_users_by_wallets(&req.wallets[..USERS_MAX_WALLETS_REQ_LIMIT])
+            .get_users_by_wallets(&requestor, &req.wallets[..USERS_MAX_WALLETS_REQ_LIMIT])
             .await
             .map_err(|e| format!("Unable to acquire users profiles. Error: {e}")),
-
         Err(e) => Err(format!("Users request failure. Error: {e}")),
     };
 

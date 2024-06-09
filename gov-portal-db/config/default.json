@@ -28,7 +28,8 @@
                 "email": "gwg@airdao.io"
             },
             "subject": "Complete Your Governor Email Verification"
-        }
+        },
+        "moderators": []
     },
     "mongo": {
         "url": null,

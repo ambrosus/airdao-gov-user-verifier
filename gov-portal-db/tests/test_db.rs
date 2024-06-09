@@ -33,6 +33,7 @@ async fn test_register_user() -> Result<(), anyhow::Error> {
                 },
                 subject: "Complete Your Governor Email Verification".to_string(),
             },
+            moderators: vec![],
         },
     )
     .await?;
@@ -92,6 +93,12 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
         request_timeout: 10,
     };
 
+    let moderators = vec![
+        Address::from_low_u64_le(1_234_567),
+        Address::from_low_u64_le(1_234_568),
+        Address::from_low_u64_le(1_234_569),
+    ];
+
     let users_manager = std::sync::Arc::new(
         UsersManager::new(
             &mongo_config,
@@ -109,6 +116,7 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
                     },
                     subject: "Complete Your Governor Email Verification".to_string(),
                 },
+                moderators,
             },
         )
         .await?,
@@ -136,17 +144,39 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
     }))
     .await;
 
+    assert_matches!(
+        users_manager
+            .get_users_by_wallets(&Address::from_low_u64_le(0), &[])
+            .await,
+        Err(error::Error::Unauthorized)
+    );
+
     assert_eq!(
         users_manager
-            .get_users_by_wallets(&[
-                Address::from_low_u64_le(10),
-                Address::from_low_u64_le(0),
-                Address::from_low_u64_le(1),
-                Address::from_low_u64_le(7),
-                Address::from_low_u64_le(8),
-                Address::from_low_u64_le(2),
-                Address::from_low_u64_le(9),
-            ])
+            .get_users_by_wallets(&Address::from_low_u64_le(1_234_567), &[])
+            .await
+            .and_then(|profiles| profiles
+                .into_iter()
+                .map(|profile| Ok(profile.info.email))
+                .collect::<Result<Vec<_>, _>>())
+            .unwrap(),
+        vec![]
+    );
+
+    assert_eq!(
+        users_manager
+            .get_users_by_wallets(
+                &Address::from_low_u64_le(1_234_568),
+                &[
+                    Address::from_low_u64_le(10),
+                    Address::from_low_u64_le(0),
+                    Address::from_low_u64_le(1),
+                    Address::from_low_u64_le(7),
+                    Address::from_low_u64_le(8),
+                    Address::from_low_u64_le(2),
+                    Address::from_low_u64_le(9),
+                ]
+            )
             .await
             .and_then(|profiles| profiles
                 .into_iter()
@@ -238,6 +268,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
                 },
                 subject: "Complete Your Governor Email Verification".to_string(),
             },
+            moderators: vec![],
         },
     )
     .await?;
