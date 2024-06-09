@@ -28,6 +28,9 @@ pub struct AppState {
     pub quiz: Quiz,
 }
 
+/// Maximum number of wallets are allowed at once to request with `/users` endpoint to fetch users profiles
+const USERS_MAX_WALLETS_REQ_LIMIT: usize = 50;
+
 impl AppState {
     pub async fn new(
         config: AppConfig,
@@ -50,6 +53,14 @@ impl AppState {
 pub enum TokenQuery {
     Message { data: String },
     NoMessage {},
+}
+
+/// JSON-serialized request passed as POST-data to `/users` endpoint
+#[derive(Debug, Deserialize)]
+pub struct UsersRequest {
+    wallets: Vec<Address>,
+    #[serde(flatten)]
+    pub session: SessionToken,
 }
 
 #[derive(Debug, Serialize)]
@@ -147,6 +158,7 @@ pub async fn start(config: AppConfig, users_manager: Arc<UsersManager>) -> Resul
     let app = Router::new()
         .route("/token", post(token_route))
         .route("/user", post(user_route))
+        .route("/users", post(users_route))
         .route("/update-user", post(update_user_route))
         .route("/check-email", post(check_email_route))
         .route("/verify-email", post(verify_email_route))
@@ -201,6 +213,32 @@ async fn user_route(
     };
 
     tracing::debug!("[/user] Response {res:?}");
+
+    res.map(Json)
+}
+
+/// Route handler to read multiple User's profiles from MongoDB
+async fn users_route(
+    State(state): State<AppState>,
+    Json(req): Json<UsersRequest>,
+) -> Result<Json<Vec<UserProfile>>, String> {
+    tracing::debug!(
+        "[/users] Request (session: {session:?}, wallets: {wallets})",
+        session = req.session,
+        wallets = req.wallets.len()
+    );
+
+    let res = match state.session_manager.verify_token(&req.session) {
+        Ok(_) => state
+            .users_manager
+            .get_users_by_wallets(&req.wallets[..USERS_MAX_WALLETS_REQ_LIMIT])
+            .await
+            .map_err(|e| format!("Unable to acquire users profiles. Error: {e}")),
+
+        Err(e) => Err(format!("Users request failure. Error: {e}")),
+    };
+
+    tracing::debug!("[/users] Response {res:?}");
 
     res.map(Json)
 }
