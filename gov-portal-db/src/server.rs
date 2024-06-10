@@ -228,10 +228,12 @@ async fn users_route(
         wallets = req.wallets.len()
     );
 
+    let wallets_max_count = std::cmp::min(req.wallets.len(), USERS_MAX_WALLETS_REQ_LIMIT);
+
     let res = match state.session_manager.verify_token(&req.session) {
         Ok(requestor) => state
             .users_manager
-            .get_users_by_wallets(&requestor, &req.wallets[..USERS_MAX_WALLETS_REQ_LIMIT])
+            .get_users_by_wallets(&requestor, &req.wallets[..wallets_max_count])
             .await
             .map_err(|e| format!("Unable to acquire users profiles. Error: {e}")),
         Err(e) => Err(format!("Users request failure. Error: {e}")),
