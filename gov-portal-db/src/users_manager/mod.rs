@@ -37,6 +37,7 @@ pub struct UsersManagerConfig {
     /// User profile attributes verification settings
     pub user_profile_attributes: UserProfileAttributes,
     pub email_verification: EmailVerificationConfig,
+    pub moderators: Vec<Address>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -193,8 +194,18 @@ impl UsersManager {
     /// Searches for multiple user profiles within MongoDB by provided EVM-like address [`Address`] list and returns [`Vec<UserProfile>`]
     pub async fn get_users_by_wallets(
         &self,
+        requestor: &Address,
         wallets: &[Address],
     ) -> Result<Vec<UserProfile>, error::Error> {
+        if !self
+            .config
+            .moderators
+            .iter()
+            .any(|wallet| wallet == requestor)
+        {
+            return Err(error::Error::Unauthorized);
+        }
+
         if wallets.is_empty() {
             return Ok(vec![]);
         }
@@ -570,7 +581,8 @@ mod tests {
                         "email": "gwg@airdao.io"
                     },
                     "subject": "Complete Your Governor Email Verification"
-                }
+                },
+                "moderators": ["0xc0ffee254729296a45a3885639AC7E10F9d54979"]
             }
         "#,
         )

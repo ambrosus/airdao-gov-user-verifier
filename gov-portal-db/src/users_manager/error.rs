@@ -1,5 +1,7 @@
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("Not authorized")]
+    Unauthorized,
     #[error("User is already registered")]
     UserAlreadyExist,
     #[error("User is not registered")]
