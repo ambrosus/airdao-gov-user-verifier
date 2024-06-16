@@ -5,11 +5,11 @@ use airdao_gov_portal_db::{
     users_manager::{EmailVerificationConfig, *},
 };
 use assert_matches::assert_matches;
-use shared::common::{EmailFrom, UserInfo, UserProfile, UserProfileStatus, WrappedCid};
+use shared::common::{EmailFrom, User, UserProfile, UserProfileStatus, WrappedCid};
 use web3::types::Address;
 
 #[tokio::test]
-async fn test_register_user() -> Result<(), anyhow::Error> {
+async fn test_upsert_user() -> Result<(), anyhow::Error> {
     let mongo_config = mongo_client::MongoConfig {
         url: Some("mongodb://localhost:27017".to_owned()),
         db: "AirDAOGovPortal_IntegrationTest".to_owned(),
@@ -44,25 +44,17 @@ async fn test_register_user() -> Result<(), anyhow::Error> {
         .delete_many(bson::doc! {}, None)
         .await?;
 
-    let addr_1 = Address::from_low_u64_le(0);
-    let addr_2 = Address::from_low_u64_le(1);
+    let addr_1 = Address::from_low_u64_le(1);
+    let addr_2 = Address::from_low_u64_le(2);
 
     users_manager
-        .register_user(&UserInfo {
-            wallet: addr_1,
-            email: Some("test@test.com".try_into()?),
-            ..default_user_info()
-        })
+        .upsert_user(addr_1, "test@test.com".try_into()?)
         .await?;
 
-    // Verify that same wallet can't be registered twice
+    // Verify that same wallet & email can't be registered twice
     assert_matches!(
         users_manager
-            .register_user(&UserInfo {
-                wallet: addr_1,
-                email: Some("test1@test.com".try_into()?),
-                ..default_user_info()
-            })
+            .upsert_user(addr_1, "test@test.com".try_into()?)
             .await,
         Err(error::Error::UserAlreadyExist)
     );
@@ -70,14 +62,15 @@ async fn test_register_user() -> Result<(), anyhow::Error> {
     // Verify that same email can't be registered twice
     assert_matches!(
         users_manager
-            .register_user(&UserInfo {
-                wallet: addr_2,
-                email: Some("test@test.com".try_into()?),
-                ..default_user_info()
-            })
+            .upsert_user(addr_2, "test@test.com".try_into()?)
             .await,
         Err(error::Error::UserAlreadyExist)
     );
+
+    // Verify that email can be updated
+    users_manager
+        .upsert_user(addr_1, "test1@test.com".try_into()?)
+        .await?;
 
     users_manager.mongo_client.collection.drop(None).await?;
 
@@ -128,17 +121,13 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
         .delete_many(bson::doc! {}, None)
         .await?;
 
-    futures_util::future::join_all((0u64..=8).map(|i| {
+    futures_util::future::join_all((1u64..=9).map(|i| {
         let users_manager = users_manager.clone();
 
         async move {
             let wallet = Address::from_low_u64_le(i);
             users_manager
-                .register_user(&UserInfo {
-                    wallet,
-                    email: Some(format!("test{i}@test.com").try_into().unwrap()),
-                    ..default_user_info()
-                })
+                .upsert_user(wallet, format!("test{i}@test.com").try_into().unwrap())
                 .await
         }
     }))
@@ -155,9 +144,9 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
         users_manager
             .get_users_by_wallets(&Address::from_low_u64_le(1_234_567), &[])
             .await
-            .and_then(|profiles| profiles
+            .and_then(|users| users
                 .into_iter()
-                .map(|profile| Ok(profile.info.email))
+                .map(|user| Ok(user.profile.and_then(|profile| profile.email)))
                 .collect::<Result<Vec<_>, _>>())
             .unwrap(),
         vec![]
@@ -168,27 +157,29 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
             .get_users_by_wallets(
                 &Address::from_low_u64_le(1_234_568),
                 &[
-                    Address::from_low_u64_le(10),
-                    Address::from_low_u64_le(0),
+                    Address::from_low_u64_le(11),
                     Address::from_low_u64_le(1),
-                    Address::from_low_u64_le(7),
-                    Address::from_low_u64_le(8),
                     Address::from_low_u64_le(2),
+                    Address::from_low_u64_le(8),
                     Address::from_low_u64_le(9),
+                    Address::from_low_u64_le(3),
+                    Address::from_low_u64_le(10),
                 ]
             )
             .await
-            .and_then(|profiles| profiles
-                .into_iter()
-                .map(|profile| Ok(profile.info.email))
-                .collect::<Result<Vec<_>, _>>())
+            .and_then(|users| {
+                users
+                    .into_iter()
+                    .map(|user| Ok(user.profile.and_then(|profile| profile.email)))
+                    .collect::<Result<Vec<_>, _>>()
+            })
             .unwrap(),
         vec![
-            Some("test0@test.com".parse().unwrap()),
             Some("test1@test.com".parse().unwrap()),
             Some("test2@test.com".parse().unwrap()),
-            Some("test7@test.com".parse().unwrap()),
-            Some("test8@test.com".parse().unwrap())
+            Some("test3@test.com".parse().unwrap()),
+            Some("test8@test.com".parse().unwrap()),
+            Some("test9@test.com".parse().unwrap())
         ]
     );
 
@@ -292,20 +283,16 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
 
     assert_matches!(quiz_result, QuizResult::Solved(2, 2));
 
-    let addr_1 = Address::from_low_u64_le(0);
+    let addr_1 = Address::from_low_u64_le(1);
 
     users_manager
-        .register_user(&UserInfo {
-            wallet: addr_1,
-            email: Some("test@test.com".try_into()?),
-            ..default_user_info()
-        })
+        .upsert_user(addr_1, "test@test.com".try_into()?)
         .await?;
 
     // Verify that newly registered user has incomplete profile status with not solved quiz
     assert_matches!(
         users_manager.get_user_by_wallet(addr_1).await,
-        Ok(UserProfile {
+        Ok(User {
             status: UserProfileStatus::Incomplete {
                 quiz_solved: false,
                 finished_profile: false
@@ -321,7 +308,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
     // Verify that newly registered user has incomplete profile status with solved quiz
     assert_matches!(
         users_manager.get_user_by_wallet(addr_1).await,
-        Ok(UserProfile {
+        Ok(User {
             status: UserProfileStatus::Incomplete {
                 quiz_solved: true,
                 finished_profile: false
@@ -331,22 +318,24 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
     );
 
     users_manager
-        .update_user(UserInfo {
-            wallet: addr_1,
-            name: Some("some name".to_owned()),
-            role: Some("some role".to_owned()),
-            bio: Some("some bio".to_owned()),
-            avatar: Some(WrappedCid::new(
-                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-            )?),
-            ..default_user_info()
-        })
+        .update_user_profile(
+            addr_1,
+            UserProfile {
+                name: Some("some name".to_owned()),
+                role: Some("some role".to_owned()),
+                bio: Some("some bio".to_owned()),
+                avatar: Some(WrappedCid::new(
+                    "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+                )?),
+                ..Default::default()
+            },
+        )
         .await?;
 
     // Verify that newly registered user has complete profile status with solved quiz
     assert_matches!(
         users_manager.get_user_by_wallet(addr_1).await,
-        Ok(UserProfile {
+        Ok(User {
             status: UserProfileStatus::Complete(_),
             ..
         })
@@ -355,18 +344,4 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
     users_manager.mongo_client.collection.drop(None).await?;
 
     Ok(())
-}
-
-fn default_user_info() -> UserInfo {
-    UserInfo {
-        wallet: Address::default(),
-        name: None,
-        role: None,
-        old_email: None,
-        email: None,
-        telegram: None,
-        twitter: None,
-        bio: None,
-        avatar: None,
-    }
 }

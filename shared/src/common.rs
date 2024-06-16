@@ -5,7 +5,7 @@ use ethabi::{encode, Address, ParamType, Token};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::{fmt::Display, str::FromStr, time::Duration};
 
-use crate::utils::{self, convert_to_claims_with_expiration, decode_sbt_request};
+use crate::utils::{self, decode_sbt_request};
 
 /// Minimum time required before oauth2 token expires in seconds
 static OAUTH_TOKEN_MINIMUM_LIFETIME: u64 = 300;
@@ -15,7 +15,7 @@ static OAUTH_TOKEN_MINIMUM_LIFETIME: u64 = 300;
 #[derive(Deserialize, Debug)]
 pub struct VerifyAccountRequest {
     /// User's profile
-    pub user: UserProfile,
+    pub user: User,
     /// Fractal token's kind
     #[serde(flatten)]
     pub token: TokenKind,
@@ -63,16 +63,13 @@ pub struct SBTRequest {
 }
 
 /// User's profile information struct
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct UserInfo {
-    pub wallet: Address,
+pub struct UserProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
-    #[serde(skip_serializing)]
-    pub old_email: Option<serde_email::Email>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<serde_email::Email>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -89,8 +86,8 @@ pub struct UserInfo {
     pub avatar: Option<WrappedCid>,
 }
 
-impl UserInfo {
-    pub fn is_profile_finished(&self) -> bool {
+impl UserProfile {
+    pub fn is_finished(&self) -> bool {
         self.email.is_some()
             && self.name.is_some()
             && self.role.is_some()
@@ -101,16 +98,22 @@ impl UserInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UserProfile {
-    /// User's public profile information    
-    pub info: UserInfo,
+pub struct User {
+    /// User's unique wallet address
+    pub wallet: Address,
+    /// User's public profile information
+    pub profile: Option<UserProfile>,
     #[serde(flatten)]
     pub status: UserProfileStatus,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct RawUserProfile {
+pub struct UserDbEntry {
+    /// User's unique wallet address
+    pub wallet: Address,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_transaction: Option<DateTime<Utc>>,
     /// Quiz questionnaire solve result
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quiz_solved: Option<bool>,
@@ -120,17 +123,37 @@ pub struct RawUserProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocked_until: Option<u64>,
     /// Users profile information
-    #[serde(flatten)]
-    pub info: UserInfo,
+    #[serde(default, skip_serializing_if = "Option::is_none", flatten)]
+    pub profile: Option<UserProfile>,
 }
 
-impl From<UserInfo> for RawUserProfile {
-    fn from(info: UserInfo) -> Self {
+impl From<User> for UserDbEntry {
+    fn from(user: User) -> Self {
         Self {
+            wallet: user.wallet,
+            first_transaction: None,
             quiz_solved: None,
             blocked_until: None,
-            info,
+            profile: user.profile,
         }
+    }
+}
+
+impl From<UserEmailUpdateRequest> for UserProfile {
+    fn from(req: UserEmailUpdateRequest) -> Self {
+        Self {
+            email: Some(req.email),
+            ..Default::default()
+        }
+    }
+}
+
+impl UserDbEntry {
+    pub fn is_profile_finished(&self) -> bool {
+        self.profile
+            .as_ref()
+            .map(|profile| profile.is_finished())
+            .unwrap_or_default()
     }
 }
 
@@ -152,6 +175,13 @@ pub enum UserProfileStatus {
     },
     /// Profile is complete and ready to be verified by Fractal
     Complete(CompletionToken),
+}
+
+/// User profile verification token with expiration
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UserProfileVerificationToken {
+    wallet: Address,
+    exp: i64,
 }
 
 /// Profile completion JWT token for an access to Fractal user verification
@@ -183,57 +213,69 @@ impl Default for UserProfileStatus {
     }
 }
 
-impl UserProfile {
+impl User {
     pub fn new(
-        raw_profile: RawUserProfile,
+        db_entry: UserDbEntry,
         expires_at: DateTime<Utc>,
         secret: &[u8],
     ) -> anyhow::Result<Self> {
-        let finished_profile = raw_profile.info.is_profile_finished();
+        let finished_profile = db_entry.is_profile_finished();
 
-        match raw_profile {
-            RawUserProfile {
+        match db_entry {
+            UserDbEntry {
+                wallet,
                 blocked_until: Some(ts),
-                info,
+                profile,
                 ..
             } if ts > Utc::now().timestamp_millis() as u64 => Ok(Self {
-                info,
+                wallet,
+                profile,
                 status: UserProfileStatus::Blocked { blocked_until: ts },
             }),
-            RawUserProfile {
+            UserDbEntry {
+                wallet,
                 quiz_solved: Some(true),
-                info,
+                profile,
                 ..
             } if finished_profile => {
-                let claims = convert_to_claims_with_expiration(&info, expires_at)?;
-
                 let status = jsonwebtoken::encode(
                     &jsonwebtoken::Header::default(),
-                    &claims,
+                    &UserProfileVerificationToken {
+                        wallet,
+                        exp: expires_at.timestamp(),
+                    },
                     &jsonwebtoken::EncodingKey::from_secret(secret),
                 )
                 .map_err(anyhow::Error::from)
                 .map(|token| UserProfileStatus::Complete(token.into()))?;
 
-                Ok(Self { info, status })
+                Ok(Self {
+                    wallet,
+                    profile,
+                    status,
+                })
             }
-            RawUserProfile {
+            UserDbEntry {
+                wallet,
                 quiz_solved: Some(false) | None,
-                info,
+                profile,
                 ..
             } => Ok(Self {
-                info,
+                wallet,
+                profile,
                 status: UserProfileStatus::Incomplete {
                     quiz_solved: false,
                     finished_profile,
                 },
             }),
-            RawUserProfile {
+            UserDbEntry {
+                wallet,
                 quiz_solved: Some(true),
-                info,
+                profile,
                 ..
             } => Ok(Self {
-                info,
+                wallet,
+                profile,
                 status: UserProfileStatus::Incomplete {
                     quiz_solved: true,
                     finished_profile,
@@ -252,7 +294,7 @@ impl UserProfile {
             let validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::default());
 
             // User profile verification JWT token check
-            let Ok(token_data) = jsonwebtoken::decode::<UserInfo>(
+            let Ok(token_data) = jsonwebtoken::decode::<UserProfileVerificationToken>(
                 token,
                 &jsonwebtoken::DecodingKey::from_secret(secret),
                 &validation,
@@ -261,7 +303,7 @@ impl UserProfile {
             };
 
             // Check that user profile verification token corresponds to the same wallet
-            token_data.claims.wallet == self.info.wallet
+            token_data.claims.wallet == self.wallet
         } else {
             false
         }
@@ -440,6 +482,14 @@ impl OAuthToken {
     }
 }
 
+/// User email change request encoded into confirmation token
+#[derive(Debug, Deserialize)]
+pub struct UserEmailUpdateRequest {
+    pub wallet: Address,
+    pub old_email: Option<serde_email::Email>,
+    pub email: serde_email::Email,
+}
+
 /// Email confirmation JWT token used to set or update email to User's profile in AirDao DB
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserEmailConfirmationToken {
@@ -469,11 +519,11 @@ impl UserEmailConfirmationToken {
         .map(|token| Self { token })
     }
 
-    /// Validates that verification email JWT token is valid and not expired. Returns [`UserInfo`]
-    pub fn verify(&self, secret: &[u8]) -> Result<UserInfo, anyhow::Error> {
+    /// Validates that verification email JWT token is valid and not expired. Extracts and returns [`UserEmailUpdateRequest`] struct.
+    pub fn verify(&self, secret: &[u8]) -> Result<UserEmailUpdateRequest, anyhow::Error> {
         let validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::default());
 
-        let token_data = jsonwebtoken::decode::<UserInfo>(
+        let token_data = jsonwebtoken::decode::<UserEmailUpdateRequest>(
             &self.token,
             &jsonwebtoken::DecodingKey::from_secret(secret),
             &validation,
@@ -570,25 +620,25 @@ mod tests {
     use ethereum_types::Address;
     use serde_email::Email;
 
-    use super::{RawUserProfile, UserProfile, UserProfileStatus, WrappedCid};
-    use crate::common::{CompletionToken, UserInfo};
+    use super::{UserDbEntry, UserProfile, UserProfileStatus, WrappedCid};
+    use crate::common::{CompletionToken, User};
 
     #[test]
     fn test_de_raw_user_profile() {
-        serde_json::from_str::<RawUserProfile>(
-            r#"
-          {
+        serde_json::from_str::<UserDbEntry>(
+            r#"{
             "quizSolved": true,
             "wallet": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
-            "name": "test user name",
-            "role": "test role",
-            "email": "test@test.com",
-            "telegram": "@telegram",
-            "twitter": "@twitter",
-            "bio": "some test bio",
-            "avatar": "http://test.com"
-          }
-        "#,
+            "profile": {
+                "name": "test user name",
+                "role": "test role",
+                "email": "test@test.com",
+                "telegram": "@telegram",
+                "twitter": "@twitter",
+                "bio": "some test bio",
+                "avatar": "http://test.com"    
+            }
+          }"#,
         )
         .unwrap();
     }
@@ -596,11 +646,11 @@ mod tests {
     #[test]
     fn test_de_user_profile() {
         assert_matches::assert_matches!(
-            serde_json::from_str::<UserProfile>(
+            serde_json::from_str::<User>(
                 r#"
                     {
-                        "info": {
-                            "wallet": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+                        "wallet": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+                        "profile": {
                             "name": "test user name",
                             "role": "test role",
                             "email": "test@test.com",
@@ -613,7 +663,7 @@ mod tests {
                     }
                 "#
             ),
-            Ok(UserProfile {
+            Ok(User {
                 status: UserProfileStatus::Blocked {
                     blocked_until: 100000
                 },
@@ -622,11 +672,11 @@ mod tests {
         );
 
         assert_matches::assert_matches!(
-            serde_json::from_str::<UserProfile>(
+            serde_json::from_str::<User>(
                 r#"
                     {
-                        "info": {
-                            "wallet": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+                        "wallet": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+                        "profile": {
                             "name": "test user name",
                             "role": "test role",
                             "email": "test@test.com",
@@ -640,7 +690,7 @@ mod tests {
                     }
                 "#
             ),
-            Ok(UserProfile {
+            Ok(User {
                 status: UserProfileStatus::Incomplete {
                     quiz_solved: false,
                     finished_profile: false,
@@ -650,11 +700,11 @@ mod tests {
         );
 
         assert_matches::assert_matches!(
-            serde_json::from_str::<UserProfile>(
+            serde_json::from_str::<User>(
                 r#"
                     {
-                        "info": {
-                            "wallet": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+                        "wallet": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+                        "profile": {
                             "name": "test user name",
                             "role": "test role",
                             "email": "test@test.com",
@@ -667,7 +717,7 @@ mod tests {
                     }
                 "#
             ),
-            Ok(UserProfile {
+            Ok(User {
                 status: UserProfileStatus::Complete(CompletionToken { token }),
                 ..
             }) if token.as_str() == "some_verification_token"
@@ -678,18 +728,20 @@ mod tests {
     fn test_user_profile_completion() {
         struct TestCase {
             title: &'static str,
-            input: UserProfile,
+            input: User,
             expected: bool,
         }
 
         let test_cases = [
             TestCase {
                 title: "User profile is completed",
-                input: UserProfile::new(
-                    RawUserProfile {
+                input: User::new(
+                    UserDbEntry {
+                        wallet: default_user_wallet(),
+                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
-                        info: default_user_info(),
+                        profile: Some(test_user_profile()),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -699,14 +751,16 @@ mod tests {
             },
             TestCase {
                 title: "User profile is not completed (missed bio)",
-                input: UserProfile::new(
-                    RawUserProfile {
+                input: User::new(
+                    UserDbEntry {
+                        wallet: default_user_wallet(),
+                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
-                        info: UserInfo {
+                        profile: Some(UserProfile {
                             bio: None,
-                            ..default_user_info()
-                        },
+                            ..test_user_profile()
+                        }),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -716,14 +770,16 @@ mod tests {
             },
             TestCase {
                 title: "User profile is not completed (missed name)",
-                input: UserProfile::new(
-                    RawUserProfile {
+                input: User::new(
+                    UserDbEntry {
+                        wallet: default_user_wallet(),
+                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
-                        info: UserInfo {
+                        profile: Some(UserProfile {
                             name: None,
-                            ..default_user_info()
-                        },
+                            ..test_user_profile()
+                        }),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -733,14 +789,16 @@ mod tests {
             },
             TestCase {
                 title: "User profile is not completed (missed role)",
-                input: UserProfile::new(
-                    RawUserProfile {
+                input: User::new(
+                    UserDbEntry {
+                        wallet: default_user_wallet(),
+                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
-                        info: UserInfo {
+                        profile: Some(UserProfile {
                             role: None,
-                            ..default_user_info()
-                        },
+                            ..test_user_profile()
+                        }),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -750,14 +808,16 @@ mod tests {
             },
             TestCase {
                 title: "User profile is not completed (missed avatar)",
-                input: UserProfile::new(
-                    RawUserProfile {
+                input: User::new(
+                    UserDbEntry {
+                        wallet: default_user_wallet(),
+                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
-                        info: UserInfo {
+                        profile: Some(UserProfile {
                             avatar: None,
-                            ..default_user_info()
-                        },
+                            ..test_user_profile()
+                        }),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -767,11 +827,13 @@ mod tests {
             },
             TestCase {
                 title: "User profile is not completed (quiz not solved)",
-                input: UserProfile::new(
-                    RawUserProfile {
+                input: User::new(
+                    UserDbEntry {
+                        wallet: default_user_wallet(),
+                        first_transaction: None,
                         quiz_solved: Some(false),
                         blocked_until: None,
-                        info: default_user_info(),
+                        profile: Some(test_user_profile()),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -781,16 +843,18 @@ mod tests {
             },
             TestCase {
                 title: "User profile is not completed (blocked)",
-                input: UserProfile::new(
-                    RawUserProfile {
+                input: User::new(
+                    UserDbEntry {
+                        wallet: default_user_wallet(),
+                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: Some(
                             (Utc::now() + Duration::from_secs(300)).timestamp_millis() as u64,
                         ),
-                        info: UserInfo {
+                        profile: Some(UserProfile {
                             bio: None,
-                            ..default_user_info()
-                        },
+                            ..test_user_profile()
+                        }),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -800,11 +864,13 @@ mod tests {
             },
             TestCase {
                 title: "User profile is not completed (invalid secret)",
-                input: UserProfile::new(
-                    RawUserProfile {
+                input: User::new(
+                    UserDbEntry {
+                        wallet: default_user_wallet(),
+                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
-                        info: default_user_info(),
+                        profile: Some(test_user_profile()),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "unknown_secret".as_bytes(),
@@ -814,11 +880,13 @@ mod tests {
             },
             TestCase {
                 title: "User profile is not completed (expired token)",
-                input: UserProfile::new(
-                    RawUserProfile {
+                input: User::new(
+                    UserDbEntry {
+                        wallet: default_user_wallet(),
+                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
-                        info: default_user_info(),
+                        profile: Some(test_user_profile()),
                     },
                     Utc::now() - Duration::from_secs(300),
                     "test".as_bytes(),
@@ -856,12 +924,14 @@ mod tests {
         );
     }
 
-    fn default_user_info() -> UserInfo {
-        UserInfo {
-            wallet: Address::from_low_u64_le(0),
+    fn default_user_wallet() -> Address {
+        Address::from_low_u64_le(0)
+    }
+
+    fn test_user_profile() -> UserProfile {
+        UserProfile {
             name: Some("test".to_owned()),
             role: Some("test".to_owned()),
-            old_email: None,
             email: Some(Email::from_str("test@test.com").unwrap()),
             telegram: None,
             twitter: None,

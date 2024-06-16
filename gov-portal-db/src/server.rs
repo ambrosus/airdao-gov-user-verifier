@@ -7,8 +7,8 @@ use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
 use shared::common::{
-    SendEmailRequest, SendEmailRequestKind, SessionToken, UserEmailConfirmationToken, UserInfo,
-    UserProfile, UserProfileStatus, WrappedCid,
+    SendEmailRequest, SendEmailRequestKind, SessionToken, User, UserEmailConfirmationToken,
+    UserProfile, UserProfileStatus,
 };
 
 use crate::{
@@ -86,18 +86,8 @@ pub struct VerifyQuizRequest {
 /// info which should be updated in MongoDB
 #[derive(Debug, Deserialize)]
 pub struct UpdateUserRequest {
-    #[serde(default)]
-    pub name: Option<String>,
-    #[serde(default)]
-    pub role: Option<String>,
-    #[serde(default)]
-    pub telegram: Option<String>,
-    #[serde(default)]
-    pub twitter: Option<String>,
-    #[serde(default)]
-    pub bio: Option<String>,
-    #[serde(default)]
-    pub avatar: Option<WrappedCid>,
+    #[serde(flatten)]
+    pub profile: UserProfile,
     #[serde(flatten)]
     pub session: SessionToken,
 }
@@ -199,7 +189,7 @@ async fn token_route(
 async fn user_route(
     State(state): State<AppState>,
     Json(token): Json<SessionToken>,
-) -> Result<Json<UserProfile>, String> {
+) -> Result<Json<User>, String> {
     tracing::debug!("[/user] Request {token:?}");
 
     let res = match state.session_manager.verify_token(&token) {
@@ -221,7 +211,7 @@ async fn user_route(
 async fn users_route(
     State(state): State<AppState>,
     Json(req): Json<UsersRequest>,
-) -> Result<Json<Vec<UserProfile>>, String> {
+) -> Result<Json<Vec<User>>, String> {
     tracing::debug!(
         "[/users] Request (session: {session:?}, wallets: {wallets})",
         session = req.session,
@@ -295,7 +285,7 @@ async fn verify_quiz_route(
 
     let res = match user_res {
         // Do not need to verify quiz if already solved
-        Ok(UserProfile {
+        Ok(User {
             status:
                 UserProfileStatus::Incomplete {
                     quiz_solved: true, ..
@@ -304,7 +294,7 @@ async fn verify_quiz_route(
             ..
         }) => Ok(QuizResult::AlreadySolved),
         // Do not allow to solve quiz if temporarily blocked
-        Ok(UserProfile {
+        Ok(User {
             status: UserProfileStatus::Blocked { blocked_until },
             ..
         }) if blocked_until > Utc::now().timestamp_millis() as u64 => {
@@ -315,7 +305,7 @@ async fn verify_quiz_route(
 
             state
                 .users_manager
-                .update_user_quiz_result(user.info.wallet, &quiz_result)
+                .update_user_quiz_result(user.wallet, &quiz_result)
                 .await
                 .map_err(|e| format!("Update user profile with quiz results failure. Error: {e}"))
                 .map(|_| quiz_result)
@@ -338,7 +328,7 @@ async fn update_user_route(
     let res = match state.session_manager.verify_token(&update_req.session) {
         Ok(wallet) => state
             .users_manager
-            .update_user(update_req.into_user(wallet))
+            .update_user_profile(wallet, update_req.profile)
             .await
             .map_err(|e| format!("Unable to update user profile. Error: {e}")),
 
@@ -443,25 +433,17 @@ async fn update_email_route(
         .users_manager
         .verify_email_confirmation_token(&reg_token)
     {
-        Ok(
-            info @ UserInfo {
-                old_email: None, ..
-            },
-        ) => state
+        Ok(req) => state
             .users_manager
-            .register_user(&info)
+            .upsert_user(req.wallet, req.email)
             .await
-            .map_err(|e| format!("User registration failure. Error: {e}")),
-
-        Ok(
-            info @ UserInfo {
-                old_email: Some(_), ..
-            },
-        ) => state
-            .users_manager
-            .update_user(info)
-            .await
-            .map_err(|e| format!("User email update failure. Error: {e}")),
+            .map_err(|e| {
+                if req.old_email.is_none() {
+                    format!("User registration failure. Error: {e}")
+                } else {
+                    format!("User email update failure. Error: {e}")
+                }
+            }),
 
         Err(e) => Err(format!("Wrong email update request. Error: {e}")),
     };
@@ -469,22 +451,6 @@ async fn update_email_route(
     tracing::debug!("[/update-email] Response {res:?}");
 
     res.map(Json)
-}
-
-impl UpdateUserRequest {
-    fn into_user(self, wallet: Address) -> UserInfo {
-        UserInfo {
-            wallet,
-            name: self.name,
-            role: self.role,
-            old_email: None,
-            email: None,
-            telegram: self.telegram,
-            twitter: self.twitter,
-            bio: self.bio,
-            avatar: self.avatar,
-        }
-    }
 }
 
 impl SignedQuizResponse {

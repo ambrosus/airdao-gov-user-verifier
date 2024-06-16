@@ -15,8 +15,8 @@ use tokio::time::Duration;
 
 use shared::{
     common::{
-        EmailFrom, RawUserProfile, SendEmailRequest, UserEmailConfirmationToken, UserInfo,
-        UserProfile,
+        EmailFrom, SendEmailRequest, User, UserDbEntry, UserEmailConfirmationToken,
+        UserEmailUpdateRequest, UserProfile,
     },
     utils,
 };
@@ -142,24 +142,54 @@ impl UsersManager {
         })
     }
 
-    /// Registers new user by writing verified [`UserInfo`] struct to MongoDB, which will be uniquely indexed by
+    /// Registers new user by writing verified [`UserDbEntry`] struct to MongoDB, which will be uniquely indexed by
     /// EVM-like wallet address [`Address`] and user email [`serde_email::Email`].
-    pub async fn register_user(&self, user: &UserInfo) -> Result<(), error::Error> {
-        self.verify_user(user)?;
+    pub async fn upsert_user(
+        &self,
+        wallet: Address,
+        email: serde_email::Email,
+    ) -> Result<(), error::Error> {
+        self.verify_user_email(&email)?;
 
-        let user_doc = bson::to_document(&user)?;
+        let query = doc! {
+            "wallet": bson::to_bson(&wallet)?,
+        };
 
-        match self.mongo_client.insert_one(user_doc, None).await {
-            Ok(_) => Ok(()),
+        let profile_doc = doc! {
+            "wallet": bson::to_bson(&wallet)?,
+            "email": bson::to_bson(&email)?,
+        };
+
+        let update = doc! {
+            "$set": profile_doc
+        };
+
+        let options = UpdateOptions::builder().upsert(true).build();
+
+        let upsert_result = tokio::time::timeout(self.mongo_client.req_timeout, async {
+            self.mongo_client.update_one(query, update, options).await
+        })
+        .await?;
+
+        match upsert_result {
+            // Register new user or update email
+            Ok(UpdateResult {
+                modified_count,
+                upserted_id,
+                ..
+            }) if modified_count > 0 || upserted_id.is_some() => Ok(()),
+            // Trying to upsert user with same wallet & email
+            Ok(_) => Err(error::Error::UserAlreadyExist),
+            // Trying to upsert user with email attached to different wallet
             Err(MongoError { kind, .. }) if is_key_duplication_error(&kind) => {
                 Err(error::Error::UserAlreadyExist)
             }
-            Err(e) => Err(error::Error::from(e)),
+            Err(e) => Err(e.into()),
         }
     }
 
-    /// Searches for a user profile within MongoDB by provided EVM-like address [`Address`] and returns [`UserProfile`]
-    pub async fn get_user_by_wallet(&self, wallet: Address) -> Result<UserProfile, error::Error> {
+    /// Searches for a user profile within MongoDB by provided EVM-like address [`Address`] and returns [`User`]
+    pub async fn get_user_by_wallet(&self, wallet: Address) -> Result<User, error::Error> {
         let filter = doc! {
             "wallet": bson::to_bson(&wallet)?,
         };
@@ -177,17 +207,21 @@ impl UsersManager {
         })
         .await??
         .ok_or(error::Error::UserNotFound)
-        .and_then(|doc| bson::from_document::<RawUserProfile>(doc).map_err(error::Error::from));
+        .and_then(|doc| bson::from_document::<UserDbEntry>(doc).map_err(error::Error::from));
 
         tracing::debug!("Get user by wallet ({wallet}) result: {res:?}");
 
-        res.and_then(|raw_profile| {
-            UserProfile::new(
-                raw_profile,
-                Utc::now() + self.config.lifetime,
-                self.config.secret.as_bytes(),
-            )
-            .map_err(error::Error::from)
+        res.and_then(|db_entry| {
+            if db_entry.profile.is_none() {
+                Err(error::Error::UserNotFound)
+            } else {
+                User::new(
+                    db_entry,
+                    Utc::now() + self.config.lifetime,
+                    self.config.secret.as_bytes(),
+                )
+                .map_err(error::Error::from)
+            }
         })
     }
 
@@ -196,7 +230,7 @@ impl UsersManager {
         &self,
         requestor: &Address,
         wallets: &[Address],
-    ) -> Result<Vec<UserProfile>, error::Error> {
+    ) -> Result<Vec<User>, error::Error> {
         if !self
             .config
             .moderators
@@ -230,7 +264,7 @@ impl UsersManager {
 
                 if let Ok(Some(doc)) = stream.try_next().await {
                     let profile =
-                        bson::from_document::<RawUserProfile>(doc).map_err(error::Error::from)?;
+                        bson::from_document::<UserDbEntry>(doc).map_err(error::Error::from)?;
                     profiles.push(profile);
                 } else {
                     break;
@@ -242,33 +276,39 @@ impl UsersManager {
 
         tracing::debug!("Get users by wallets ({wallets:?}) result: {res:?}");
 
-        res.and_then(|raw_profiles| {
-            raw_profiles
+        res.and_then(|entries| {
+            entries
                 .into_iter()
-                .map(|raw_profile| {
-                    UserProfile::new(
-                        raw_profile,
-                        Utc::now() + self.config.lifetime,
-                        self.config.secret.as_bytes(),
-                    )
-                    .map_err(error::Error::from)
+                .map(|db_entry| {
+                    if db_entry.profile.is_none() {
+                        Err(error::Error::UserNotFound)
+                    } else {
+                        User::new(
+                            db_entry,
+                            Utc::now() + self.config.lifetime,
+                            self.config.secret.as_bytes(),
+                        )
+                        .map_err(error::Error::from)
+                    }
                 })
                 .collect::<Result<_, _>>()
         })
     }
 
     /// Updates user profile stored in MongoDB by updated [`User`] struct. Input [`User`] struct is verified for correctness.
-    pub async fn update_user(&self, user: UserInfo) -> Result<(), error::Error> {
-        self.verify_user(&user)?;
-
-        let wallet = user.wallet;
+    pub async fn update_user_profile(
+        &self,
+        wallet: Address,
+        profile: UserProfile,
+    ) -> Result<(), error::Error> {
+        self.verify_user_profile(&profile)?;
 
         let query = doc! {
             "wallet": bson::to_bson(&wallet)?,
         };
 
         let update = doc! {
-            "$set": bson::to_bson(&RawUserProfile::from(user))?
+            "$set": bson::to_bson(&profile)?
         };
 
         let options = UpdateOptions::builder().upsert(false).build();
@@ -298,39 +338,23 @@ impl UsersManager {
         let update = match quiz_result {
             QuizResult::Solved(..) => {
                 doc! {
-                    "$set": bson::to_bson(&RawUserProfile {
+                    "$set": bson::to_bson(&UserDbEntry {
+                        wallet,
+                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
-                        info: UserInfo {
-                            wallet,
-                            name: None,
-                            role: None,
-                            old_email: None,
-                            email: None,
-                            telegram: None,
-                            twitter: None,
-                            bio: None,
-                            avatar: None
-                        },
+                        profile: None,
                     })?
                 }
             }
             QuizResult::Failed(_, _, block_until) => {
                 doc! {
-                    "$set": bson::to_bson(&RawUserProfile {
+                    "$set": bson::to_bson(&UserDbEntry {
+                        wallet,
+                        first_transaction: None,
                         quiz_solved: Some(false),
                         blocked_until: Some(block_until.timestamp_millis() as u64),
-                        info: UserInfo {
-                            wallet,
-                            name: None,
-                            role: None,
-                            old_email: None,
-                            email: None,
-                            telegram: None,
-                            twitter: None,
-                            bio: None,
-                            avatar: None
-                        },
+                        profile: None,
                     })?
                 }
             }
@@ -361,8 +385,7 @@ impl UsersManager {
 
     /// Acquires email confirmation JWT token [`UserEmailConfirmationToken`] for a pair of EVM-like wallet address [`Address`] and
     /// user email [`serde_email::Email`]. Should be used to set or update email in user profile.
-    /// JWT token will contain EVM-like wallet address [`Address`] and user email [`serde_email::Email`] which could be used
-    /// to create [`UserInfo`] struct out of it.
+    /// JWT token will store EVM-like wallet address [`Address`] and user email [`serde_email::Email`] inside.
     pub fn acquire_email_confirmation_token(
         &self,
         wallet: Address,
@@ -379,22 +402,37 @@ impl UsersManager {
         .map_err(|e| anyhow::Error::msg(format!("Failed to generate JWT token. Error: {}", e)))
     }
 
-    /// Verifies JWT token [`UserEmailConfirmationToken`] and extracts EVM-like wallet address [`Address`]
-    /// and user email [`serde_email::Email`] to create [`UserInfo`] struct with extracted fields set.
+    /// Verifies JWT token [`UserEmailConfirmationToken`] and extracts [`UserEmailUpdateRequest`] struct which contains
+    /// EVM-like wallet address [`Address`] and verified user email [`serde_email::Email`].
     pub fn verify_email_confirmation_token(
         &self,
         token: &UserEmailConfirmationToken,
-    ) -> Result<UserInfo, anyhow::Error> {
-        let user = token.verify(self.config.secret.as_bytes())?;
+    ) -> Result<UserEmailUpdateRequest, anyhow::Error> {
+        let req = token.verify(self.config.secret.as_bytes())?;
 
-        self.verify_user(&user)?;
+        self.verify_user_email(&req.email)?;
 
-        Ok(user)
+        Ok(req)
     }
 
-    /// Verifies user profile [`User`] struct fields for correctness
-    fn verify_user(&self, user: &UserInfo) -> Result<(), error::Error> {
-        if user.name.as_ref().is_some_and(|value| {
+    /// Verifies user email [`serde_email::Email`] for correctness
+    fn verify_user_email(&self, email: &serde_email::Email) -> Result<(), error::Error> {
+        if email.as_str().len() < self.config.user_profile_attributes.email_min_length
+            || email.as_str().len() > self.config.user_profile_attributes.email_max_length
+        {
+            return Err(error::Error::InvalidInput(format!(
+                "Email doesn't met requirements (min: {}, max: {})",
+                self.config.user_profile_attributes.email_min_length,
+                self.config.user_profile_attributes.email_max_length
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Verifies user profile [`UserProfile`] struct fields for correctness
+    fn verify_user_profile(&self, profile: &UserProfile) -> Result<(), error::Error> {
+        if profile.name.as_ref().is_some_and(|value| {
             value.len() < self.config.user_profile_attributes.name_min_length
                 || value.len() > self.config.user_profile_attributes.name_max_length
         }) {
@@ -405,7 +443,7 @@ impl UsersManager {
             )));
         }
 
-        if user.role.as_ref().is_some_and(|value| {
+        if profile.role.as_ref().is_some_and(|value| {
             value.len() < self.config.user_profile_attributes.role_min_length
                 || value.len() > self.config.user_profile_attributes.role_max_length
         }) {
@@ -416,18 +454,11 @@ impl UsersManager {
             )));
         }
 
-        if user.email.as_ref().is_some_and(|value| {
-            value.as_str().len() < self.config.user_profile_attributes.email_min_length
-                || value.as_str().len() > self.config.user_profile_attributes.email_max_length
-        }) {
-            return Err(error::Error::InvalidInput(format!(
-                "Email doesn't met requirements (min: {}, max: {})",
-                self.config.user_profile_attributes.email_min_length,
-                self.config.user_profile_attributes.email_max_length
-            )));
+        if let Some(email) = profile.email.as_ref() {
+            self.verify_user_email(email)?;
         }
 
-        if user.telegram.as_ref().is_some_and(|value| {
+        if profile.telegram.as_ref().is_some_and(|value| {
             value.len() > self.config.user_profile_attributes.telegram_max_length
         }) {
             return Err(error::Error::InvalidInput(format!(
@@ -436,7 +467,7 @@ impl UsersManager {
             )));
         }
 
-        if user.twitter.as_ref().is_some_and(|value| {
+        if profile.twitter.as_ref().is_some_and(|value| {
             value.len() > self.config.user_profile_attributes.twitter_max_length
         }) {
             return Err(error::Error::InvalidInput(format!(
@@ -445,7 +476,7 @@ impl UsersManager {
             )));
         }
 
-        if user.bio.as_ref().is_some_and(|value| {
+        if profile.bio.as_ref().is_some_and(|value| {
             value.len() < self.config.user_profile_attributes.bio_min_length
                 || value.len() > self.config.user_profile_attributes.bio_max_length
         }) {

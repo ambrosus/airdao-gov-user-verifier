@@ -15,8 +15,8 @@ use tower_http::cors::CorsLayer;
 
 use shared::{
     common::{
-        ApprovedResponse, PendingResponse, SBTRequest, SessionToken, SignedSBTRequest,
-        UserDbConfig, UserInfo, UserProfile, VerifyAccountResponse, WrappedCid,
+        ApprovedResponse, PendingResponse, SBTRequest, SessionToken, SignedSBTRequest, User,
+        UserDbConfig, UserProfile, VerifyAccountResponse, WrappedCid,
     },
     logger, utils,
 };
@@ -191,7 +191,7 @@ async fn index_route(
     State(state): State<AppState>,
     Query(req): Query<IndexQuery>,
 ) -> Result<Html<String>, String> {
-    let (page_name, session_token, user_profile) = match req {
+    let (page_name, session_token, user) = match req {
         IndexQuery::WithJwtToken { session: token } => match state.get_user(&token).await {
             Ok(user) => ("index.html", None, Some(user)),
             Err(e) => {
@@ -205,45 +205,54 @@ async fn index_route(
         IndexQuery::NoJwtToken {} => ("no-session.html", None, None),
     };
 
-    let user = user_profile.map(|profile| profile.info);
+    let (wallet, user_profile) = match user {
+        Some(user) => (user.wallet, user.profile.unwrap_or_default()),
+        None => (Address::default(), UserProfile::default()),
+    };
 
     state
         .pages
         .get(page_name)
         .map(|content| {
-            let user = user.unwrap_or_else(default_user_info);
             Html(
                 content
-                    .replace(
-                        "{{USER_WALLET}}",
-                        &utils::get_checksum_address(&user.wallet),
-                    )
+                    .replace("{{USER_WALLET}}", &utils::get_checksum_address(&wallet))
                     .replace(
                         "{{USER_AVATAR_CID}}",
-                        &user
+                        &user_profile
                             .avatar
                             .as_ref()
                             .map(|cid| cid.to_string())
                             .unwrap_or_default(),
                     )
-                    .replace("{{USER_NAME}}", user.name.as_deref().unwrap_or_default())
-                    .replace("{{USER_ROLE}}", user.role.as_deref().unwrap_or_default())
+                    .replace(
+                        "{{USER_NAME}}",
+                        user_profile.name.as_deref().unwrap_or_default(),
+                    )
+                    .replace(
+                        "{{USER_ROLE}}",
+                        user_profile.role.as_deref().unwrap_or_default(),
+                    )
                     .replace(
                         "{{USER_EMAIL}}",
-                        user.email
+                        user_profile
+                            .email
                             .as_ref()
                             .map(|email| email.as_str())
                             .unwrap_or_default(),
                     )
                     .replace(
                         "{{USER_TELEGRAM}}",
-                        user.telegram.as_deref().unwrap_or_default(),
+                        user_profile.telegram.as_deref().unwrap_or_default(),
                     )
                     .replace(
                         "{{USER_TWITTER}}",
-                        user.twitter.as_deref().unwrap_or_default(),
+                        user_profile.twitter.as_deref().unwrap_or_default(),
                     )
-                    .replace("{{USER_BIO}}", user.bio.as_deref().unwrap_or_default())
+                    .replace(
+                        "{{USER_BIO}}",
+                        user_profile.bio.as_deref().unwrap_or_default(),
+                    )
                     .replace("{{SESSION}}", &session_token.unwrap_or_default())
                     .replace("{{CLIENT_ID}}", &state.config.signer.fractal_client_id),
             )
@@ -255,7 +264,7 @@ async fn update_user_route(
     State(state): State<AppState>,
     Query(req): Query<UpdateUserQuery>,
 ) -> Result<Html<String>, String> {
-    let (page_name, session_token, user_profile) = match req {
+    let (page_name, session_token, user) = match req {
         UpdateUserQuery::WithJwtToken {
             session: token,
             name,
@@ -281,50 +290,64 @@ async fn update_user_route(
         UpdateUserQuery::NoJwtToken {} => ("no-session.html", None, Err("No session".to_owned())),
     };
 
-    let user = user_profile.map(|profile| profile.info);
-
     state
         .pages
         .get(page_name)
         .map(|content| {
-            let (user, error_text) = match user {
-                Ok(user) => (user, None),
-                Err(e) => (default_user_info(), Some(e)),
+            let (wallet, user_profile, error_text) = match user {
+                Ok(User {
+                    wallet,
+                    profile: Some(user_profile),
+                    ..
+                }) => (wallet, user_profile, None),
+                Ok(User { wallet, .. }) => (
+                    wallet,
+                    UserProfile::default(),
+                    Some("No profile data".to_owned()),
+                ),
+                Err(e) => (Address::default(), UserProfile::default(), Some(e)),
             };
 
             Html(
                 content
                     .replace("{{ERROR_TEXT}}", &error_text.unwrap_or_default())
-                    .replace(
-                        "{{USER_WALLET}}",
-                        &utils::get_checksum_address(&user.wallet),
-                    )
+                    .replace("{{USER_WALLET}}", &utils::get_checksum_address(&wallet))
                     .replace(
                         "{{USER_AVATAR_CID}}",
-                        &user
+                        &user_profile
                             .avatar
                             .as_ref()
                             .map(|cid| cid.to_string())
                             .unwrap_or_default(),
                     )
-                    .replace("{{USER_NAME}}", user.name.as_deref().unwrap_or_default())
-                    .replace("{{USER_ROLE}}", user.role.as_deref().unwrap_or_default())
+                    .replace(
+                        "{{USER_NAME}}",
+                        user_profile.name.as_deref().unwrap_or_default(),
+                    )
+                    .replace(
+                        "{{USER_ROLE}}",
+                        user_profile.role.as_deref().unwrap_or_default(),
+                    )
                     .replace(
                         "{{USER_EMAIL}}",
-                        user.email
+                        user_profile
+                            .email
                             .as_ref()
                             .map(|email| email.as_str())
                             .unwrap_or_default(),
                     )
                     .replace(
                         "{{USER_TELEGRAM}}",
-                        user.telegram.as_deref().unwrap_or_default(),
+                        user_profile.telegram.as_deref().unwrap_or_default(),
                     )
                     .replace(
                         "{{USER_TWITTER}}",
-                        user.twitter.as_deref().unwrap_or_default(),
+                        user_profile.twitter.as_deref().unwrap_or_default(),
                     )
-                    .replace("{{USER_BIO}}", user.bio.as_deref().unwrap_or_default())
+                    .replace(
+                        "{{USER_BIO}}",
+                        user_profile.bio.as_deref().unwrap_or_default(),
+                    )
                     .replace("{{SESSION}}", &session_token.unwrap_or_default())
                     .replace("{{CLIENT_ID}}", &state.config.signer.fractal_client_id),
             )
@@ -492,7 +515,7 @@ async fn assign_email_route(
     State(state): State<AppState>,
     Query(req): Query<AssignEmailQuery>,
 ) -> Result<Html<String>, String> {
-    let (page_name, session_token, user_profile) = match req {
+    let (page_name, session_token, user) = match req {
         AssignEmailQuery::WithJwtToken { session: token } => match state.get_user(&token).await {
             Ok(user) => ("assign-email.html", Some(token), Some(user)),
             Err(e) => {
@@ -506,20 +529,21 @@ async fn assign_email_route(
         AssignEmailQuery::NoJwtToken {} => ("no-session.html", None, None),
     };
 
-    let user = user_profile.map(|profile| profile.info);
+    let user_profile = user.and_then(|user| user.profile);
 
     state
         .pages
         .get(page_name)
         .map(|content| {
-            let user = user.unwrap_or_else(default_user_info);
             Html(
                 content
                     .replace(
                         "{{USER_EMAIL}}",
-                        user.email
+                        user_profile
                             .as_ref()
-                            .map(|email| email.as_str())
+                            .and_then(|profile| {
+                                profile.email.as_ref().map(serde_email::Email::as_str)
+                            })
                             .unwrap_or_default(),
                     )
                     .replace("{{SESSION}}", &session_token.unwrap_or_default()),
@@ -576,7 +600,7 @@ impl AppState {
         utils::parse_json_response(raw_data).map_err(anyhow::Error::msg)
     }
 
-    async fn get_user(&self, token: &str) -> Result<UserProfile, anyhow::Error> {
+    async fn get_user(&self, token: &str) -> Result<User, anyhow::Error> {
         let raw_data = self
             .client
             .post(&[&self.config.user_db.base_url, "/user"].concat())
@@ -586,7 +610,7 @@ impl AppState {
             .text()
             .await?;
 
-        serde_json::from_str::<UserProfile>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
+        serde_json::from_str::<User>(&raw_data).map_err(|_| anyhow::Error::msg(raw_data))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -700,19 +724,5 @@ impl AppState {
                 Err(anyhow::Error::msg(error))
             }
         }
-    }
-}
-
-fn default_user_info() -> UserInfo {
-    UserInfo {
-        wallet: Address::default(),
-        name: None,
-        role: None,
-        old_email: None,
-        email: None,
-        telegram: None,
-        twitter: None,
-        bio: None,
-        avatar: None,
     }
 }

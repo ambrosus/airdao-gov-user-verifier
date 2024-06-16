@@ -78,6 +78,7 @@ impl MongoClient {
     }
 
     /// Insert single document to collection
+    #[allow(unused)]
     pub async fn insert_one(
         &self,
         doc: impl std::borrow::Borrow<Document>,
