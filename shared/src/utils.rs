@@ -1,5 +1,5 @@
 use backtrace::Backtrace;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 use config::{self, ConfigError};
 use ethabi::{encode, Address, Bytes, ParamType, Token, Uint};
 use ethereum_types::H160;
@@ -61,6 +61,20 @@ pub fn set_heavy_panic() {
     }));
 }
 
+/// Deserializes private key in hex format into [`k256::SecretKey`]
+pub fn de_secp256k1_signing_key<'de, D>(
+    deserializer: D,
+) -> Result<k256::ecdsa::SigningKey, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let string = String::deserialize(deserializer)?;
+    let bytes = hex::decode(string)
+        .map_err(|err| de::Error::custom(format!("Not supported format: {}", err)))?;
+    k256::ecdsa::SigningKey::from_slice(&bytes)
+        .map_err(|err| de::Error::custom(format!("Not a private key: {}", err)))
+}
+
 /// Deserialize seconds into [`std::time::Duration`]
 pub fn de_secs_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where
@@ -73,10 +87,9 @@ pub fn parse_datetime(ts_bytes: &[u8]) -> Result<DateTime<Utc>, String> {
     <[u8; 8]>::try_from(ts_bytes)
         .map_err(|e| format!("Failed to deserialize DateTime. Error: {e:?}"))
         .and_then(|be_bytes| {
-            NaiveDateTime::from_timestamp_millis(i64::from_be_bytes(be_bytes))
+            DateTime::from_timestamp_millis(i64::from_be_bytes(be_bytes))
                 .ok_or_else(|| format!("Failed to deserialize DateTime from bytes: {:?}", be_bytes))
         })
-        .map(|naive_dt| DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc))
 }
 
 /// Creates encoded data which contains user's Ethereum wallet address, internal Fractal User Id, timestamps in seconds

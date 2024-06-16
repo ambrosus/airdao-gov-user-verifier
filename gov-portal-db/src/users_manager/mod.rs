@@ -557,7 +557,7 @@ fn is_key_duplication_error(error_kind: &MongoErrorKind) -> bool {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use chrono::{NaiveDateTime, TimeZone, Utc};
+    use chrono::DateTime;
 
     use super::{QuizResult, UsersManagerConfig};
 
@@ -572,9 +572,7 @@ mod tests {
             serde_json::to_string(&QuizResult::Failed(
                 3,
                 5,
-                Utc.from_utc_datetime(
-                    &NaiveDateTime::from_timestamp_millis(1708997209002).unwrap()
-                )
+                DateTime::from_timestamp_millis(1708997209002).unwrap()
             ))
             .as_deref(),
             Ok("[3,5,1708997209002]")
