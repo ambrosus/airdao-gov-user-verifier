@@ -340,7 +340,6 @@ impl UsersManager {
                 doc! {
                     "$set": bson::to_bson(&UserDbEntry {
                         wallet,
-                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: None,
@@ -351,7 +350,6 @@ impl UsersManager {
                 doc! {
                     "$set": bson::to_bson(&UserDbEntry {
                         wallet,
-                        first_transaction: None,
                         quiz_solved: Some(false),
                         blocked_until: Some(block_until.timestamp_millis() as u64),
                         profile: None,

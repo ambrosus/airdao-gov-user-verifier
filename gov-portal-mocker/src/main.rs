@@ -16,7 +16,7 @@ use tower_http::cors::CorsLayer;
 use shared::{
     common::{
         ApprovedResponse, PendingResponse, SBTRequest, SessionToken, SignedSBTRequest, User,
-        UserDbConfig, UserProfile, VerifyAccountResponse, WrappedCid,
+        UserDbConfig, UserProfile, VerifyResponse, WrappedCid,
     },
     logger, utils,
 };
@@ -690,7 +690,7 @@ impl AppState {
         tracing::debug!("User verifier raw response: {}", response);
 
         match serde_json::from_str(&response) {
-            Ok(VerifyAccountResponse::Approved(ApprovedResponse {
+            Ok(VerifyResponse::Approved(ApprovedResponse {
                 msg: base64_encoded_result,
             })) => {
                 let page_content = self
@@ -708,7 +708,7 @@ impl AppState {
                     page_content.replace("{{RESULT}}", &serde_json::to_string(&sbt_req)?),
                 ))
             }
-            Ok(VerifyAccountResponse::Pending(PendingResponse { token })) => {
+            Ok(VerifyResponse::Pending(PendingResponse { token })) => {
                 let page_content = self
                     .pages
                     .get("pending.html")

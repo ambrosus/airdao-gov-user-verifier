@@ -1,8 +1,8 @@
 use base64::{engine::general_purpose, Engine};
 use chrono::{DateTime, Utc};
-use ethabi::Address;
+use ethabi::{Address, Hash};
 
-use shared::common::{ApprovedResponse, PendingResponse, VerifyAccountResponse};
+use shared::common::{ApprovedResponse, PendingResponse, VerifyResponse};
 
 use crate::{
     error::AppError,
@@ -15,21 +15,33 @@ pub fn create_verify_account_response(
     wallet: Address,
     user: VerifiedUser,
     datetime: DateTime<Utc>,
-) -> Result<VerifyAccountResponse, AppError> {
+) -> Result<VerifyResponse, AppError> {
     match user.status.uniqueness {
         VerificationStatus::Approved => {
             let sbt_req = signer.build_signed_sbt_request(wallet, user.user_id.0, datetime)?;
 
             let msg = general_purpose::STANDARD.encode(serde_json::to_string(&sbt_req)?);
 
-            Ok(VerifyAccountResponse::Approved(ApprovedResponse { msg }))
+            Ok(VerifyResponse::Approved(ApprovedResponse { msg }))
         }
-        VerificationStatus::Pending => Ok(VerifyAccountResponse::Pending(PendingResponse {
+        VerificationStatus::Pending => Ok(VerifyResponse::Pending(PendingResponse {
             token: user.token,
         })),
         VerificationStatus::Rejected => Err(AppError::VerificationRejected),
         VerificationStatus::Unavailable => Err(AppError::VerificationNotCompleted),
     }
+}
+
+pub fn create_verify_og_response(
+    signer: &SbtRequestSigner,
+    wallet: Address,
+    tx_hash: Hash,
+) -> Result<VerifyResponse, AppError> {
+    let sbt_req = signer.build_signed_og_sbt_request(wallet, tx_hash)?;
+
+    let msg = general_purpose::STANDARD.encode(serde_json::to_string(&sbt_req)?);
+
+    Ok(VerifyResponse::Approved(ApprovedResponse { msg }))
 }
 
 #[cfg(test)]
@@ -65,6 +77,7 @@ mod tests {
             .unwrap(),
             request_lifetime: Duration::from_secs(180),
             sbt_lifetime: Duration::from_secs(86_400),
+            og_eligible_before: Utc::now(),
         });
 
         let wallet = shared::utils::get_eth_address(
@@ -79,7 +92,7 @@ mod tests {
         struct TestCase {
             name: &'static str,
             input: VerificationStatus,
-            expected: Result<VerifyAccountResponse, String>,
+            expected: Result<VerifyResponse, String>,
         }
 
         let test_cases = [
@@ -96,14 +109,14 @@ mod tests {
             TestCase {
                 name: "Verification is pending",
                 input: VerificationStatus::Pending,
-                expected: Ok(VerifyAccountResponse::Pending(PendingResponse {
+                expected: Ok(VerifyResponse::Pending(PendingResponse {
                     token: token.clone(),
                 })),
             },
             TestCase {
                 name: "Verification is approved",
                 input: VerificationStatus::Approved,
-                expected: Ok(VerifyAccountResponse::Approved(ApprovedResponse {
+                expected: Ok(VerifyResponse::Approved(ApprovedResponse {
                     msg: "eyJkIjoiMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwOTNhMTZiNDAzODcyOWYwYzQ5OGZkZDlhNzBlMDVmYmIzM2Y3OWEyZDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwYTFhMmEzYTRiMWIyYzFjMmQxZDJkM2Q0ZDVkNmQ3ZDgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMGI0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAxNTE4MCIsInYiOjI4LCJyIjoiYmJhZDJmZmVhZTgzZWIzNTYzZDVmY2UxMTRjZGUyY2U2YzAwMDkzMDAyNTYwYzVkNjcwMWIyZTg1OTU2NTJlNiIsInMiOiIxOWQyZTkzNmYyZGVmMmE0MzA4ZDU3NzQzN2EzMWQyMTI4MGFjZGZiYjQwYjNmMmYzNzZjMzY4NTQzZWEyMzkzIn0=".to_owned(),
                 })),
             },

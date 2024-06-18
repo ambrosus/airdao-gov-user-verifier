@@ -2,11 +2,17 @@ use axum::{extract::State, routing::post, Json, Router};
 use chrono::Utc;
 use tower_http::cors::CorsLayer;
 
-use shared::common::{User, UserProfileStatus, VerifyAccountRequest, VerifyAccountResponse};
+use shared::common::{
+    User, UserProfileStatus, VerifyAccountRequest, VerifyOgRequest, VerifyResponse,
+};
 
 use crate::{
-    config::AppConfig, error::AppError, fractal::FractalClient, signer::SbtRequestSigner,
-    verification::create_verify_account_response,
+    config::AppConfig,
+    error::AppError,
+    explorer_client::ExplorerClient,
+    fractal::FractalClient,
+    signer::SbtRequestSigner,
+    verification::{create_verify_account_response, create_verify_og_response},
 };
 
 #[derive(Clone)]
@@ -14,6 +20,7 @@ pub struct AppState {
     pub config: AppConfig,
     pub client: FractalClient,
     pub signer: SbtRequestSigner,
+    pub explorer_client: ExplorerClient,
 }
 
 impl AppState {
@@ -21,6 +28,7 @@ impl AppState {
         Ok(Self {
             client: FractalClient::new(config.fractal.clone())?,
             signer: SbtRequestSigner::new(config.signer.clone()),
+            explorer_client: ExplorerClient::new(config.explorer.clone())?,
             config,
         })
     }
@@ -36,6 +44,7 @@ pub async fn start(config: AppConfig) -> Result<(), AppError> {
 
     let app = Router::new()
         .route("/verify", post(verify_endpoint))
+        .route("/verify_og", post(verify_og_endpoint))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -49,7 +58,7 @@ pub async fn start(config: AppConfig) -> Result<(), AppError> {
 async fn verify_endpoint(
     State(state): State<AppState>,
     Json(req): Json<VerifyAccountRequest>,
-) -> Result<Json<VerifyAccountResponse>, AppError> {
+) -> Result<Json<VerifyResponse>, AppError> {
     tracing::debug!("Request: {req:?}");
 
     let is_oauth_token = matches!(req.token, shared::common::TokenKind::OAuth { .. });
@@ -72,6 +81,38 @@ async fn verify_endpoint(
             return Err(e);
         }
     };
+
+    tracing::debug!("Response: {result:?}");
+
+    result.map(Json)
+}
+
+async fn verify_og_endpoint(
+    State(state): State<AppState>,
+    Json(req): Json<VerifyOgRequest>,
+) -> Result<Json<VerifyResponse>, AppError> {
+    tracing::debug!("Request: {req:?}");
+
+    let is_user_profile_complete = matches!(
+        req.user,
+        User { status: UserProfileStatus::Complete(_), .. } if req.user.is_complete(state.config.users_manager_secret.as_bytes())
+    );
+
+    if !is_user_profile_complete {
+        return Err(AppError::OgVerificationNotAllowed);
+    }
+
+    let wallet = req.user.wallet;
+
+    let result = state
+        .explorer_client
+        .find_first_transaction_before(wallet, state.config.signer.og_eligible_before)
+        .await
+        .map_err(AppError::from)
+        .and_then(|tx_hash| match tx_hash {
+            Some(tx_hash) => create_verify_og_response(&state.signer, wallet, tx_hash),
+            None => Err(AppError::OgVerificationNotAllowed),
+        });
 
     tracing::debug!("Response: {result:?}");
 

@@ -1,7 +1,7 @@
 use backtrace::Backtrace;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use config::{self, ConfigError};
-use ethabi::{encode, Address, Bytes, ParamType, Token, Uint};
+use ethabi::{encode, Address, Bytes, Hash, ParamType, Token, Uint};
 use ethereum_types::H160;
 use k256::{ecdsa::RecoveryId, elliptic_curve::scalar::ScalarPrimitive, Secp256k1};
 use log::error;
@@ -83,6 +83,18 @@ where
     u64::deserialize(deserializer).map(Duration::from_secs)
 }
 
+/// Deserialize seconds timestamp into [`chrono::DateTime`]
+pub fn de_secs_timestamp_i64<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    i64::deserialize(deserializer).and_then(|ts| {
+        Utc.timestamp_opt(ts, 0).single().ok_or_else(|| {
+            serde::de::Error::custom(format!("Failed to deserialize timestamp: {ts}"))
+        })
+    })
+}
+
 pub fn parse_datetime(ts_bytes: &[u8]) -> Result<DateTime<Utc>, String> {
     <[u8; 8]>::try_from(ts_bytes)
         .map_err(|e| format!("Failed to deserialize DateTime. Error: {e:?}"))
@@ -106,6 +118,14 @@ pub fn encode_sbt_request(
         Token::Uint(user_id.into()),
         Token::Uint(Uint::from(req_expires_at)),
         Token::Uint(Uint::from(sbt_expires_at)),
+    ])
+}
+
+/// Creates encoded data which contains user's Ethereum wallet address and an eligible TX hash to mint OG SBT.
+pub fn encode_og_sbt_request(caller: Address, tx_hash: Hash) -> Bytes {
+    encode(&[
+        Token::Address(caller),
+        Token::FixedBytes(Vec::from(tx_hash.as_bytes())),
     ])
 }
 

@@ -1,5 +1,6 @@
 mod config;
 mod error;
+mod explorer_client;
 mod fractal;
 mod server;
 mod signer;

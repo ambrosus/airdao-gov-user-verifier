@@ -21,17 +21,24 @@ pub struct VerifyAccountRequest {
     pub token: TokenKind,
 }
 
+/// Verification request struct to check if User is eligible for OG SBT to acquire signed OG SBT mint request
+#[derive(Deserialize, Debug)]
+pub struct VerifyOgRequest {
+    /// User's profile
+    pub user: User,
+}
+
 /// Enumerable which represents a response to a User for his verification request
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(untagged)]
-pub enum VerifyAccountResponse {
-    /// Approved variant response if User is eligible to mint Human SBT token
+pub enum VerifyResponse {
+    /// Approved variant response
     Approved(ApprovedResponse),
     /// Pending variant response if User's face verification is still pending at Fractal side
     Pending(PendingResponse),
 }
 
-/// Signed response for a User with approved face verification
+/// Signed response for a User with approved verification
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct ApprovedResponse {
     pub msg: String,
@@ -112,8 +119,6 @@ pub struct User {
 pub struct UserDbEntry {
     /// User's unique wallet address
     pub wallet: Address,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_transaction: Option<DateTime<Utc>>,
     /// Quiz questionnaire solve result
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quiz_solved: Option<bool>,
@@ -131,7 +136,6 @@ impl From<User> for UserDbEntry {
     fn from(user: User) -> Self {
         Self {
             wallet: user.wallet,
-            first_transaction: None,
             quiz_solved: None,
             blocked_until: None,
             profile: user.profile,
@@ -738,7 +742,6 @@ mod tests {
                 input: User::new(
                     UserDbEntry {
                         wallet: default_user_wallet(),
-                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: Some(test_user_profile()),
@@ -754,7 +757,6 @@ mod tests {
                 input: User::new(
                     UserDbEntry {
                         wallet: default_user_wallet(),
-                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: Some(UserProfile {
@@ -773,7 +775,6 @@ mod tests {
                 input: User::new(
                     UserDbEntry {
                         wallet: default_user_wallet(),
-                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: Some(UserProfile {
@@ -792,7 +793,6 @@ mod tests {
                 input: User::new(
                     UserDbEntry {
                         wallet: default_user_wallet(),
-                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: Some(UserProfile {
@@ -811,7 +811,6 @@ mod tests {
                 input: User::new(
                     UserDbEntry {
                         wallet: default_user_wallet(),
-                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: Some(UserProfile {
@@ -830,7 +829,6 @@ mod tests {
                 input: User::new(
                     UserDbEntry {
                         wallet: default_user_wallet(),
-                        first_transaction: None,
                         quiz_solved: Some(false),
                         blocked_until: None,
                         profile: Some(test_user_profile()),
@@ -846,7 +844,6 @@ mod tests {
                 input: User::new(
                     UserDbEntry {
                         wallet: default_user_wallet(),
-                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: Some(
                             (Utc::now() + Duration::from_secs(300)).timestamp_millis() as u64,
@@ -867,7 +864,6 @@ mod tests {
                 input: User::new(
                     UserDbEntry {
                         wallet: default_user_wallet(),
-                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: Some(test_user_profile()),
@@ -883,7 +879,6 @@ mod tests {
                 input: User::new(
                     UserDbEntry {
                         wallet: default_user_wallet(),
-                        first_transaction: None,
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: Some(test_user_profile()),

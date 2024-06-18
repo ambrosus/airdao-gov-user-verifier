@@ -1,23 +1,25 @@
 use chrono::{DateTime, Utc};
-use ethabi::Address;
+use ethabi::{Address, Hash};
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use tokio::time::Duration;
 
-use shared::utils::encode_sbt_request;
+use shared::utils::{self, encode_og_sbt_request, encode_sbt_request};
 
 use crate::error::AppError;
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SignerConfig {
-    #[serde(deserialize_with = "shared::utils::de_secp256k1_signing_key")]
+    #[serde(deserialize_with = "utils::de_secp256k1_signing_key")]
     pub signing_key: SigningKey,
-    #[serde(deserialize_with = "shared::utils::de_secs_duration")]
+    #[serde(deserialize_with = "utils::de_secs_duration")]
     pub request_lifetime: Duration,
-    #[serde(deserialize_with = "shared::utils::de_secs_duration")]
+    #[serde(deserialize_with = "utils::de_secs_duration")]
     pub sbt_lifetime: Duration,
+    #[serde(deserialize_with = "utils::de_secs_timestamp_i64")]
+    pub og_eligible_before: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug)]
@@ -39,17 +41,7 @@ impl SbtRequestSigner {
         Self { config }
     }
 
-    /// Creates SBT request and signs encoded data
-    pub fn build_signed_sbt_request(
-        &self,
-        wallet: Address,
-        user_id: u128,
-        datetime: DateTime<Utc>,
-    ) -> Result<SignedSBTRequest, AppError> {
-        let req_expires_at = (datetime + self.config.request_lifetime).timestamp() as u64;
-        let sbt_expires_at = (datetime + self.config.sbt_lifetime).timestamp() as u64;
-        let encoded_req = encode_sbt_request(wallet, user_id, req_expires_at, sbt_expires_at);
-
+    fn sign_request(&self, encoded_req: Vec<u8>) -> Result<SignedSBTRequest, AppError> {
         let (sign, recovery_id) = self
             .config
             .signing_key
@@ -64,6 +56,31 @@ impl SbtRequestSigner {
             r: hex::encode(r),
             s: hex::encode(s),
         })
+    }
+
+    /// Creates SBT request and signs encoded data
+    pub fn build_signed_sbt_request(
+        &self,
+        wallet: Address,
+        user_id: u128,
+        datetime: DateTime<Utc>,
+    ) -> Result<SignedSBTRequest, AppError> {
+        let req_expires_at = (datetime + self.config.request_lifetime).timestamp() as u64;
+        let sbt_expires_at = (datetime + self.config.sbt_lifetime).timestamp() as u64;
+        let encoded_req = encode_sbt_request(wallet, user_id, req_expires_at, sbt_expires_at);
+
+        self.sign_request(encoded_req)
+    }
+
+    /// Creates OG SBT request and signs encoded data
+    pub fn build_signed_og_sbt_request(
+        &self,
+        wallet: Address,
+        tx_hash: Hash,
+    ) -> Result<SignedSBTRequest, AppError> {
+        let encoded_req = encode_og_sbt_request(wallet, tx_hash);
+
+        self.sign_request(encoded_req)
     }
 }
 
@@ -89,6 +106,7 @@ mod tests {
             .unwrap(), //SigningKey::random(&mut rand::rngs::OsRng),
             request_lifetime: Duration::from_secs(180),
             sbt_lifetime: Duration::from_secs(86_400),
+            og_eligible_before: Utc::now(),
         };
 
         let wallet = shared::utils::get_eth_address(

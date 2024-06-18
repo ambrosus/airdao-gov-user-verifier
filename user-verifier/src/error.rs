@@ -5,6 +5,8 @@ use serde_json::json;
 pub enum AppError {
     #[error("Wallet doesn't match or missed")]
     WalletMatchFailure,
+    #[error("Wallet is not eligible for OG SBT")]
+    OgVerificationNotAllowed,
     #[error("Wallet is not eligible yet for face verification")]
     VerificationNotAllowed,
     #[error("Face verification were rejected")]
@@ -37,6 +39,7 @@ impl IntoResponse for AppError {
                 "Internal server error".to_owned(),
             ),
             Self::VerificationRejected
+            | Self::OgVerificationNotAllowed
             | Self::VerificationNotAllowed
             | Self::VerificationNotCompleted
             | Self::WalletMatchFailure => (StatusCode::UNAUTHORIZED, self.to_string()),
