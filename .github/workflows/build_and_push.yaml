@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - og-token-support
 
 env:
   REGISTRY: ghcr.io
