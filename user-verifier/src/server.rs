@@ -110,7 +110,7 @@ async fn verify_og_endpoint(
         .await
         .map_err(AppError::from)
         .and_then(|tx_hash| match tx_hash {
-            Some(tx_hash) => create_verify_og_response(&state.signer, wallet, tx_hash),
+            Some(tx_hash) => create_verify_og_response(&state.signer, wallet, tx_hash, Utc::now()),
             None => Err(AppError::OgVerificationNotAllowed),
         });
 

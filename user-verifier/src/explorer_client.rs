@@ -5,7 +5,7 @@ use serde::Deserialize;
 use shared::utils;
 use std::time::Duration;
 
-pub const PAGE_LIMIT: u64 = 1000;
+pub const PAGE_LIMIT: u64 = 100;
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]

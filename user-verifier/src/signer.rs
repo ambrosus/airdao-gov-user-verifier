@@ -77,8 +77,10 @@ impl SbtRequestSigner {
         &self,
         wallet: Address,
         tx_hash: Hash,
+        datetime: DateTime<Utc>,
     ) -> Result<SignedSBTRequest, AppError> {
-        let encoded_req = encode_og_sbt_request(wallet, tx_hash);
+        let req_expires_at = (datetime + self.config.request_lifetime).timestamp() as u64;
+        let encoded_req = encode_og_sbt_request(wallet, tx_hash, req_expires_at);
 
         self.sign_request(encoded_req)
     }
