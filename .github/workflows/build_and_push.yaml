@@ -91,12 +91,12 @@ jobs:
 
       - name: Generate temporary Dockerfile
         run: |
-          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_db > Dockerfile_temp
+          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_db > $GITHUB_WORKSPACE/Dockerfile_temp_db
 
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          file: Dockerfile_temp
+          file: ${{ github.workspace }}/Dockerfile_temp_db
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -142,12 +142,12 @@ jobs:
 
       - name: Generate temporary Dockerfile
         run: |
-          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_verifier > Dockerfile_temp
+          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_verifier > $GITHUB_WORKSPACE/Dockerfile_temp_verifier
 
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          file: Dockerfile_temp
+          file: ${{ github.workspace }}/Dockerfile_temp_verifier
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -193,12 +193,12 @@ jobs:
 
       - name: Generate temporary Dockerfile
         run: |
-          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_mailer > Dockerfile_temp
+          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_mailer > $GITHUB_WORKSPACE/Dockerfile_temp_mailer
 
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          file: Dockerfile_temp
+          file: ${{ github.workspace }}/Dockerfile_temp_mailer
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
