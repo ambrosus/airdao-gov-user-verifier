@@ -1,5 +1,7 @@
 FROM debian:bullseye-slim
 
+ARG BRANCH
+
 WORKDIR /app
 
 COPY --from=ghcr.io/ambrosus/airdao-gov-user-binary:${BRANCH} /tmp/builder/target/release/airdao-gov-portal-db .
