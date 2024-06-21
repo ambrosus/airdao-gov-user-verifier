@@ -36,7 +36,11 @@ jobs:
       - uses: docker/metadata-action@v3
         id: meta
         with:
-          images: ghcr.io/ambrosus/airdao-gov-user-binary
+          images: ${{ env.REGISTRY }}/ambrosus/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+            type=raw,value=${{ github.ref_name }}
 
       - name: Build and push
         uses: docker/build-push-action@v2
@@ -48,7 +52,7 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new
 
-      - name: Move cachee
+      - name: Move cache
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
@@ -80,18 +84,26 @@ jobs:
         id: meta
         with:
           images: ghcr.io/ambrosus/airdao-gov-portal-db
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+            type=raw,value=${{ github.ref_name }}
+
+      - name: Generate temporary Dockerfile
+        run: |
+          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_db > $GITHUB_WORKSPACE/Dockerfile_temp_db
 
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          file: Dockerfile_db
+          file: ${{ github.workspace }}/Dockerfile_temp_db
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new
 
-      - name: Move cachee
+      - name: Move cache
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
@@ -123,18 +135,26 @@ jobs:
         id: meta
         with:
           images: ghcr.io/ambrosus/airdao-gov-user-verifier
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+            type=raw,value=${{ github.ref_name }}
+
+      - name: Generate temporary Dockerfile
+        run: |
+          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_verifier > $GITHUB_WORKSPACE/Dockerfile_temp_verifier
 
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          file: Dockerfile_verifier
+          file: ${{ github.workspace }}/Dockerfile_temp_verifier
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new
 
-      - name: Move cachee
+      - name: Move cache
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
@@ -166,18 +186,26 @@ jobs:
         id: meta
         with:
           images: ghcr.io/ambrosus/airdao-gov-user-mailer
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+            type=raw,value=${{ github.ref_name }}
+
+      - name: Generate temporary Dockerfile
+        run: |
+          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_mailer > $GITHUB_WORKSPACE/Dockerfile_temp_mailer
 
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          file: Dockerfile_mailer
+          file: ${{ github.workspace }}/Dockerfile_temp_mailer
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new
 
-      - name: Move cachee
+      - name: Move cache
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
