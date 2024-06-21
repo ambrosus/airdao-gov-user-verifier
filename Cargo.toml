@@ -51,7 +51,7 @@ redis = "0"
 # Misc
 backtrace = "0"
 uuid = { version = "1", features = ["v4", "serde"] }
-config = { version = "0", default_features = false, features = ["json"] }
+config = { version = "0.13", default_features = false, features = ["json"] }
 chrono = { version = "0", default_features = false, features = ["clock", "serde"] }
 assert_matches = "1"
 thiserror = "1"
