@@ -89,15 +89,17 @@ jobs:
             type=ref,event=branch
             type=raw,value=${{ github.ref_name }}
 
+      - name: Generate temporary Dockerfile
+        run: |
+          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_db > Dockerfile_temp
+
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          file: Dockerfile_db
+          file: Dockerfile_temp
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            BRANCH=${{ github.ref_name }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new
 
@@ -138,15 +140,17 @@ jobs:
             type=ref,event=branch
             type=raw,value=${{ github.ref_name }}
 
+      - name: Generate temporary Dockerfile
+        run: |
+          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_verifier > Dockerfile_temp
+
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          file: Dockerfile_verifier
+          file: Dockerfile_temp
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            BRANCH=${{ github.ref_name }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new
 
@@ -187,15 +191,17 @@ jobs:
             type=ref,event=branch
             type=raw,value=${{ github.ref_name }}
 
+      - name: Generate temporary Dockerfile
+        run: |
+          sed 's/${BRANCH}/'${{ github.ref_name }}'/g' Dockerfile_mailer > Dockerfile_temp
+
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          file: Dockerfile_mailer
+          file: Dockerfile_temp
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            BRANCH=${{ github.ref_name }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new
 
