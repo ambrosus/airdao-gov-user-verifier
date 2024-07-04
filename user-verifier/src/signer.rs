@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use tokio::time::Duration;
 
-use shared::utils::{self, encode_og_sbt_request, encode_sbt_request};
+use shared::utils::{self, encode_og_sbt_request, encode_sbt_request, encode_sno_sbt_request};
 
 use crate::error::AppError;
 
@@ -81,6 +81,18 @@ impl SbtRequestSigner {
     ) -> Result<SignedSBTRequest, AppError> {
         let req_expires_at = (datetime + self.config.request_lifetime).timestamp() as u64;
         let encoded_req = encode_og_sbt_request(wallet, tx_hash, req_expires_at);
+
+        self.sign_request(encoded_req)
+    }
+
+    /// Creates SNO SBT request and signs encoded data
+    pub fn build_signed_sno_sbt_request(
+        &self,
+        wallet: Address,
+        datetime: DateTime<Utc>,
+    ) -> Result<SignedSBTRequest, AppError> {
+        let req_expires_at = (datetime + self.config.request_lifetime).timestamp() as u64;
+        let encoded_req = encode_sno_sbt_request(wallet, req_expires_at);
 
         self.sign_request(encoded_req)
     }

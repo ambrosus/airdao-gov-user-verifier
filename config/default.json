@@ -16,5 +16,10 @@
     "explorer": {
         "url": "https://explorer-v2-api.ambrosus.io/v2/addresses/",
         "timeout": 600
-    }
+    },
+    "rpcNode": {
+        "url": "https://network.ambrosus.io",
+        "requestTimeout": 10000
+    },
+    "serverNodesManagerAddress": "0x"
 }

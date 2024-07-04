@@ -2,7 +2,9 @@ mod config;
 mod error;
 mod explorer_client;
 mod fractal;
+mod rpc_node_client;
 mod server;
+mod server_nodes_manager;
 mod signer;
 mod verification;
 

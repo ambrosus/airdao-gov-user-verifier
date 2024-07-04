@@ -18,7 +18,7 @@ pub struct VerifyAccountRequest {
     pub user: User,
     /// Fractal token's kind
     #[serde(flatten)]
-    pub token: TokenKind,
+    pub fractal_token: TokenKind,
 }
 
 /// Verification request struct to check if User is eligible for OG SBT to acquire signed OG SBT mint request
@@ -26,6 +26,15 @@ pub struct VerifyAccountRequest {
 pub struct VerifyOgRequest {
     /// User's profile
     pub user: User,
+}
+
+/// Verification request struct to check if User is a node owner and eligible to acquire signed SNO SBT mint request
+#[derive(Deserialize, Debug)]
+pub struct VerifyNodeOwnerRequest {
+    /// User's profile
+    pub user: User,
+    /// Base64-encoded JSON-serialized [`WalletSignedMessage`] data struct
+    pub data: String,
 }
 
 /// Enumerable which represents a response to a User for his verification request

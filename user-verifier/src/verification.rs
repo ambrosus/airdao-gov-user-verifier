@@ -45,6 +45,18 @@ pub fn create_verify_og_response(
     Ok(VerifyResponse::Approved(ApprovedResponse { msg }))
 }
 
+pub fn create_verify_node_owner_response(
+    signer: &SbtRequestSigner,
+    wallet: Address,
+    datetime: DateTime<Utc>,
+) -> Result<VerifyResponse, AppError> {
+    let sbt_req = signer.build_signed_sno_sbt_request(wallet, datetime)?;
+
+    let msg = general_purpose::STANDARD.encode(serde_json::to_string(&sbt_req)?);
+
+    Ok(VerifyResponse::Approved(ApprovedResponse { msg }))
+}
+
 #[cfg(test)]
 mod tests {
     use ecdsa::SigningKey;

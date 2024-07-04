@@ -47,11 +47,14 @@ impl AppState {
     }
 }
 
-/// JSON-serialized request passed as POST-data to `/token` endpoint and contains signed message by User's wallet secret
+/// Token request passed as POST-data to `/token` endpoint
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum TokenQuery {
-    Message { data: String },
+    /// Variant contains Base64-encoded JSON-serialized [`shared::common::WalletSignedMessage`] data struct
+    Message {
+        data: String,
+    },
     NoMessage {},
 }
 

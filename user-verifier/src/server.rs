@@ -3,7 +3,8 @@ use chrono::Utc;
 use tower_http::cors::CorsLayer;
 
 use shared::common::{
-    User, UserProfileStatus, VerifyAccountRequest, VerifyOgRequest, VerifyResponse,
+    User, UserProfileStatus, VerifyAccountRequest, VerifyNodeOwnerRequest, VerifyOgRequest,
+    VerifyResponse,
 };
 
 use crate::{
@@ -11,8 +12,13 @@ use crate::{
     error::AppError,
     explorer_client::ExplorerClient,
     fractal::FractalClient,
+    rpc_node_client::RpcNodeClient,
+    server_nodes_manager::ServerNodesManager,
     signer::SbtRequestSigner,
-    verification::{create_verify_account_response, create_verify_og_response},
+    verification::{
+        create_verify_account_response, create_verify_node_owner_response,
+        create_verify_og_response,
+    },
 };
 
 #[derive(Clone)]
@@ -21,6 +27,7 @@ pub struct AppState {
     pub client: FractalClient,
     pub signer: SbtRequestSigner,
     pub explorer_client: ExplorerClient,
+    pub server_nodes_manager: ServerNodesManager,
 }
 
 impl AppState {
@@ -29,6 +36,10 @@ impl AppState {
             client: FractalClient::new(config.fractal.clone())?,
             signer: SbtRequestSigner::new(config.signer.clone()),
             explorer_client: ExplorerClient::new(config.explorer.clone())?,
+            server_nodes_manager: ServerNodesManager::new(
+                config.server_nodes_manager_address,
+                RpcNodeClient::new(config.rpc_node.clone())?,
+            )?,
             config,
         })
     }
@@ -45,6 +56,7 @@ pub async fn start(config: AppConfig) -> Result<(), AppError> {
     let app = Router::new()
         .route("/verify", post(verify_endpoint))
         .route("/verify_og", post(verify_og_endpoint))
+        .route("/verify_node_owner", post(verify_node_owner_endpoint))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -61,7 +73,7 @@ async fn verify_endpoint(
 ) -> Result<Json<VerifyResponse>, AppError> {
     tracing::debug!("Request: {req:?}");
 
-    let is_oauth_token = matches!(req.token, shared::common::TokenKind::OAuth { .. });
+    let is_oauth_token = matches!(req.fractal_token, shared::common::TokenKind::OAuth { .. });
     let is_user_profile_complete = matches!(
         req.user,
         User { status: UserProfileStatus::Complete(_), .. } if req.user.is_complete(state.config.users_manager_secret.as_bytes())
@@ -72,7 +84,11 @@ async fn verify_endpoint(
     }
 
     let wallet = req.user.wallet;
-    let result = match state.client.fetch_and_verify_user(req.token, wallet).await {
+    let result = match state
+        .client
+        .fetch_and_verify_user(req.fractal_token, wallet)
+        .await
+    {
         Ok(verified_user) => {
             create_verify_account_response(&state.signer, wallet, verified_user, Utc::now())
         }
@@ -99,7 +115,7 @@ async fn verify_og_endpoint(
     );
 
     if !is_user_profile_complete {
-        return Err(AppError::OgVerificationNotAllowed);
+        return Err(AppError::OGVerificationNotAllowed);
     }
 
     let wallet = req.user.wallet;
@@ -111,8 +127,36 @@ async fn verify_og_endpoint(
         .map_err(AppError::from)
         .and_then(|tx_hash| match tx_hash {
             Some(tx_hash) => create_verify_og_response(&state.signer, wallet, tx_hash, Utc::now()),
-            None => Err(AppError::OgVerificationNotAllowed),
+            None => Err(AppError::OGVerificationNotAllowed),
         });
+
+    tracing::debug!("Response: {result:?}");
+
+    result.map(Json)
+}
+
+async fn verify_node_owner_endpoint(
+    State(state): State<AppState>,
+    Json(req): Json<VerifyNodeOwnerRequest>,
+) -> Result<Json<VerifyResponse>, AppError> {
+    tracing::debug!("Request: {req:?}");
+
+    let is_user_profile_complete = matches!(
+        req.user,
+        User { status: UserProfileStatus::Complete(_), .. } if req.user.is_complete(state.config.users_manager_secret.as_bytes())
+    );
+
+    if !is_user_profile_complete {
+        return Err(AppError::SNOVerificationNotAllowed);
+    }
+
+    let wallet = req.user.wallet;
+
+    let result = match state.server_nodes_manager.is_node_owner(wallet).await {
+        Ok(true) => create_verify_node_owner_response(&state.signer, wallet, Utc::now()),
+        Ok(false) => Err(AppError::SNOVerificationNotAllowed),
+        Err(e) => Err(e.into()),
+    };
 
     tracing::debug!("Response: {result:?}");
 

@@ -1,6 +1,9 @@
 use serde::Deserialize;
 
-use crate::{explorer_client::ExplorerConfig, fractal::FractalConfig, signer::SignerConfig};
+use crate::{
+    explorer_client::ExplorerConfig, fractal::FractalConfig, rpc_node_client::RpcNodeConfig,
+    signer::SignerConfig,
+};
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -10,4 +13,6 @@ pub struct AppConfig {
     pub signer: SignerConfig,
     pub users_manager_secret: String,
     pub explorer: ExplorerConfig,
+    pub rpc_node: RpcNodeConfig,
+    pub server_nodes_manager_address: ethabi::Address,
 }

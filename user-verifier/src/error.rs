@@ -5,10 +5,12 @@ use serde_json::json;
 pub enum AppError {
     #[error("Wallet doesn't match or missed")]
     WalletMatchFailure,
-    #[error("Wallet is not eligible for OG SBT")]
-    OgVerificationNotAllowed,
     #[error("Wallet is not eligible yet for face verification")]
     VerificationNotAllowed,
+    #[error("Wallet is not eligible for OG SBT")]
+    OGVerificationNotAllowed,
+    #[error("Wallet is not eligible for SNO SBT")]
+    SNOVerificationNotAllowed,
     #[error("Face verification were rejected")]
     VerificationRejected,
     #[error("Face verification wasn't completed")]
@@ -25,6 +27,10 @@ pub enum AppError {
     ReqwestError(#[from] reqwest::Error),
     #[error("Fractal error: {0}")]
     FractalError(String),
+    #[error("Web3 error: {0}")]
+    Web3(#[from] web3::Error),
+    #[error("Web3 contract error: {0}")]
+    Contract(#[from] web3::contract::Error),
 }
 
 impl IntoResponse for AppError {
@@ -34,13 +40,16 @@ impl IntoResponse for AppError {
             | Self::ServerError(_)
             | Self::SigningError(_)
             | Self::ReqwestError(_)
-            | Self::FractalError(_) => (
+            | Self::FractalError(_)
+            | Self::Web3(_)
+            | Self::Contract(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_owned(),
             ),
             Self::VerificationRejected
-            | Self::OgVerificationNotAllowed
             | Self::VerificationNotAllowed
+            | Self::OGVerificationNotAllowed
+            | Self::SNOVerificationNotAllowed
             | Self::VerificationNotCompleted
             | Self::WalletMatchFailure => (StatusCode::UNAUTHORIZED, self.to_string()),
             Self::Generic(e) => (

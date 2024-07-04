@@ -52,4 +52,5 @@ rand = { workspace = true }
 assert_matches = { workspace = true }
 
 [features]
+default = ["enable-integration-tests"]
 enable-integration-tests = ["jsonrpc-core", "web3"]
