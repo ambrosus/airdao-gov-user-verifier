@@ -26,6 +26,8 @@ pub struct VerifyAccountRequest {
 pub struct VerifyOgRequest {
     /// User's profile
     pub user: User,
+    /// Base64-encoded JSON-serialized [`WalletSignedMessage`] data struct
+    pub data: Option<String>,
 }
 
 /// Enumerable which represents a response to a User for his verification request
@@ -375,6 +377,22 @@ pub struct WalletSignedMessage {
     #[serde(rename = "msg")]
     pub message: String,
     pub sign: String,
+}
+
+impl WalletSignedMessage {
+    pub fn from_str(encoded_message: &str) -> anyhow::Result<Self> {
+        let decoded = general_purpose::STANDARD
+            .decode(encoded_message)
+            .map_err(|e| {
+                anyhow::Error::msg(format!(
+                    "Failed to deserialize base64 encoded message {e:?}"
+                ))
+            })?;
+
+        serde_json::from_slice::<WalletSignedMessage>(&decoded).map_err(|e| {
+            anyhow::Error::msg(format!("Failed to deserialize wallet signed message {e:?}"))
+        })
+    }
 }
 
 impl TryFrom<SignedSBTRequest> for SBTRequest {

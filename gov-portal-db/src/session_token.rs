@@ -1,4 +1,3 @@
-use base64::{engine::general_purpose, Engine};
 use chrono::Utc;
 use ethereum_types::Address;
 use serde::Deserialize;
@@ -27,18 +26,7 @@ impl SessionManager {
     /// Acquires a session JWT token to get an access to MongoDB for an eligible user who has proven
     /// his access to a wallet by signing a messgae
     pub fn acquire_token(&self, encoded_message: &str) -> Result<SessionToken, anyhow::Error> {
-        let decoded = general_purpose::STANDARD
-            .decode(encoded_message)
-            .map_err(|e| {
-                anyhow::Error::msg(format!(
-                    "Failed to deserialize base64 encoded message {e:?}"
-                ))
-            })?;
-
-        let signed_message =
-            serde_json::from_slice::<WalletSignedMessage>(&decoded).map_err(|e| {
-                anyhow::Error::msg(format!("Failed to deserialize wallet signed message {e:?}"))
-            })?;
+        let signed_message = WalletSignedMessage::from_str(encoded_message)?;
 
         shared::utils::recover_eth_address(signed_message)
             .and_then(|wallet| {

@@ -257,7 +257,7 @@ async fn test_og_sbt() -> Result<(), anyhow::Error> {
     };
 
     let req_signer = signer::SbtRequestSigner::new(signer_config);
-    let req = req_signer.build_signed_og_sbt_request(wallet.address(), tx_hash, Utc::now())?;
+    let req = req_signer.build_signed_og_sbt_request(wallet.address(), wallet.address(), tx_hash, Utc::now())?;
 
     let signed_data = hex::decode(&req.data)?;
     let sig_r: [u8; 32] = hex::decode(&req.r)?.try_into().map_err(|e| {

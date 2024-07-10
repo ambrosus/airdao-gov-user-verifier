@@ -122,9 +122,15 @@ pub fn encode_sbt_request(
 }
 
 /// Creates encoded data which contains user's Ethereum wallet address and an eligible TX hash to mint OG SBT.
-pub fn encode_og_sbt_request(caller: Address, tx_hash: Hash, req_expires_at: u64) -> Bytes {
+pub fn encode_og_sbt_request(
+    caller: Address,
+    og_wallet: Address,
+    tx_hash: Hash,
+    req_expires_at: u64,
+) -> Bytes {
     encode(&[
         Token::Address(caller),
+        Token::Address(og_wallet),
         Token::FixedBytes(Vec::from(tx_hash.as_bytes())),
         Token::Uint(Uint::from(req_expires_at)),
     ])
