@@ -1,10 +1,12 @@
 use axum::{extract::State, routing::post, Json, Router};
 use chrono::Utc;
+use ethereum_types::Address;
+use std::str::FromStr;
 use tower_http::cors::CorsLayer;
 
 use shared::common::{
     User, UserProfileStatus, VerifyAccountRequest, VerifyNodeOwnerRequest, VerifyOgRequest,
-    VerifyResponse,
+    VerifyResponse, WalletSignedMessage,
 };
 
 use crate::{
@@ -109,24 +111,22 @@ async fn verify_og_endpoint(
 ) -> Result<Json<VerifyResponse>, AppError> {
     tracing::debug!("Request: {req:?}");
 
-    let is_user_profile_complete = matches!(
-        req.user,
-        User { status: UserProfileStatus::Complete(_), .. } if req.user.is_complete(state.config.users_manager_secret.as_bytes())
-    );
-
-    if !is_user_profile_complete {
-        return Err(AppError::OGVerificationNotAllowed);
-    }
-
-    let wallet = req.user.wallet;
+    let og_wallet =
+        try_wallet_from_verify_og_request(&req, state.config.users_manager_secret.as_bytes())?;
 
     let result = state
         .explorer_client
-        .find_first_transaction_before(wallet, state.config.signer.og_eligible_before)
+        .find_first_transaction_before(og_wallet, state.config.signer.og_eligible_before)
         .await
         .map_err(AppError::from)
         .and_then(|tx_hash| match tx_hash {
-            Some(tx_hash) => create_verify_og_response(&state.signer, wallet, tx_hash, Utc::now()),
+            Some(tx_hash) => create_verify_og_response(
+                &state.signer,
+                req.user.wallet,
+                og_wallet,
+                tx_hash,
+                Utc::now(),
+            ),
             None => Err(AppError::OGVerificationNotAllowed),
         });
 
@@ -161,4 +161,25 @@ async fn verify_node_owner_endpoint(
     tracing::debug!("Response: {result:?}");
 
     result.map(Json)
+}
+
+fn try_wallet_from_verify_og_request(
+    req: &VerifyOgRequest,
+    secret: &[u8],
+) -> Result<Address, AppError> {
+    let is_user_profile_complete = matches!(
+        req.user,
+        User { status: UserProfileStatus::Complete(_), .. } if req.user.is_complete(secret)
+    );
+
+    if !is_user_profile_complete {
+        return Err(AppError::ProfileIncomplete);
+    }
+
+    match req.data.as_deref() {
+        Some(encoded_message) => WalletSignedMessage::from_str(encoded_message)
+            .and_then(shared::utils::recover_eth_address)
+            .map_err(|_| AppError::WalletMatchFailure),
+        None => Ok(req.user.wallet),
+    }
 }

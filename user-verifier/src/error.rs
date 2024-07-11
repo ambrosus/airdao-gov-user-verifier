@@ -3,6 +3,8 @@ use serde_json::json;
 
 #[derive(thiserror::Error, Debug)]
 pub enum AppError {
+    #[error("User profile didn't met the requirements")]
+    ProfileIncomplete,
     #[error("Wallet doesn't match or missed")]
     WalletMatchFailure,
     #[error("Wallet is not eligible yet for face verification")]
@@ -46,7 +48,8 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_owned(),
             ),
-            Self::VerificationRejected
+            Self::ProfileIncomplete
+            | Self::VerificationRejected
             | Self::VerificationNotAllowed
             | Self::OGVerificationNotAllowed
             | Self::SNOVerificationNotAllowed
