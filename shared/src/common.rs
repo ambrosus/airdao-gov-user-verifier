@@ -13,7 +13,7 @@ static OAUTH_TOKEN_MINIMUM_LIFETIME: u64 = 300;
 /// Verification request struct to check if User has approved Fractal's face verification
 /// to acquire signed SBT mint request
 #[derive(Deserialize, Debug)]
-pub struct VerifyAccountRequest {
+pub struct VerifyFractalUserRequest {
     /// User's profile
     pub user: User,
     /// Fractal token's kind
@@ -21,22 +21,13 @@ pub struct VerifyAccountRequest {
     pub fractal_token: TokenKind,
 }
 
-/// Verification request struct to check if User is eligible for OG SBT to acquire signed OG SBT mint request
+/// Verification request struct to check if user's wallet is eligible to acquire signed SBT mint request
 #[derive(Deserialize, Debug)]
-pub struct VerifyOgRequest {
+pub struct VerifyWalletRequest {
     /// User's profile
     pub user: User,
-    /// Base64-encoded JSON-serialized [`WalletSignedMessage`] data struct
+    /// Optional Base64-encoded JSON-serialized [`WalletSignedMessage`] data struct
     pub data: Option<String>,
-}
-
-/// Verification request struct to check if User is a node owner and eligible to acquire signed SNO SBT mint request
-#[derive(Deserialize, Debug)]
-pub struct VerifyNodeOwnerRequest {
-    /// User's profile
-    pub user: User,
-    /// Base64-encoded JSON-serialized [`WalletSignedMessage`] data struct
-    pub data: String,
 }
 
 /// Enumerable which represents a response to a User for his verification request

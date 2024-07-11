@@ -5,8 +5,8 @@ use std::str::FromStr;
 use tower_http::cors::CorsLayer;
 
 use shared::common::{
-    User, UserProfileStatus, VerifyAccountRequest, VerifyNodeOwnerRequest, VerifyOgRequest,
-    VerifyResponse, WalletSignedMessage,
+    User, UserProfileStatus, VerifyFractalUserRequest, VerifyResponse, VerifyWalletRequest,
+    WalletSignedMessage,
 };
 
 use crate::{
@@ -71,7 +71,7 @@ pub async fn start(config: AppConfig) -> Result<(), AppError> {
 
 async fn verify_endpoint(
     State(state): State<AppState>,
-    Json(req): Json<VerifyAccountRequest>,
+    Json(req): Json<VerifyFractalUserRequest>,
 ) -> Result<Json<VerifyResponse>, AppError> {
     tracing::debug!("Request: {req:?}");
 
@@ -107,12 +107,12 @@ async fn verify_endpoint(
 
 async fn verify_og_endpoint(
     State(state): State<AppState>,
-    Json(req): Json<VerifyOgRequest>,
+    Json(req): Json<VerifyWalletRequest>,
 ) -> Result<Json<VerifyResponse>, AppError> {
     tracing::debug!("Request: {req:?}");
 
     let og_wallet =
-        try_wallet_from_verify_og_request(&req, state.config.users_manager_secret.as_bytes())?;
+        try_wallet_from_verify_request(&req, state.config.users_manager_secret.as_bytes())?;
 
     let result = state
         .explorer_client
@@ -137,23 +137,19 @@ async fn verify_og_endpoint(
 
 async fn verify_node_owner_endpoint(
     State(state): State<AppState>,
-    Json(req): Json<VerifyNodeOwnerRequest>,
+    Json(req): Json<VerifyWalletRequest>,
 ) -> Result<Json<VerifyResponse>, AppError> {
     tracing::debug!("Request: {req:?}");
 
-    let is_user_profile_complete = matches!(
-        req.user,
-        User { status: UserProfileStatus::Complete(_), .. } if req.user.is_complete(state.config.users_manager_secret.as_bytes())
-    );
+    let node_owner_wallet =
+        try_wallet_from_verify_request(&req, state.config.users_manager_secret.as_bytes())?;
 
-    if !is_user_profile_complete {
-        return Err(AppError::SNOVerificationNotAllowed);
-    }
-
-    let wallet = req.user.wallet;
-
-    let result = match state.server_nodes_manager.is_node_owner(wallet).await {
-        Ok(true) => create_verify_node_owner_response(&state.signer, wallet, Utc::now()),
+    let result = match state
+        .server_nodes_manager
+        .is_node_owner(node_owner_wallet)
+        .await
+    {
+        Ok(true) => create_verify_node_owner_response(&state.signer, node_owner_wallet, Utc::now()),
         Ok(false) => Err(AppError::SNOVerificationNotAllowed),
         Err(e) => Err(e.into()),
     };
@@ -163,8 +159,8 @@ async fn verify_node_owner_endpoint(
     result.map(Json)
 }
 
-fn try_wallet_from_verify_og_request(
-    req: &VerifyOgRequest,
+fn try_wallet_from_verify_request(
+    req: &VerifyWalletRequest,
     secret: &[u8],
 ) -> Result<Address, AppError> {
     let is_user_profile_complete = matches!(
