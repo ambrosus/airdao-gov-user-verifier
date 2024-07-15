@@ -137,9 +137,10 @@ pub fn encode_og_sbt_request(
 }
 
 /// Creates encoded data which contains user's Ethereum wallet address to mint SNO SBT.
-pub fn encode_sno_sbt_request(caller: Address, req_expires_at: u64) -> Bytes {
+pub fn encode_sno_sbt_request(caller: Address, sno_wallet: Address, req_expires_at: u64) -> Bytes {
     encode(&[
         Token::Address(caller),
+        Token::Address(sno_wallet),
         Token::Uint(Uint::from(req_expires_at)),
     ])
 }

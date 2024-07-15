@@ -108,7 +108,7 @@ impl UserProfile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
-    /// User's unique wallet address
+    /// User's unique governor wallet address
     pub wallet: Address,
     /// User's public profile information
     pub profile: Option<UserProfile>,
@@ -119,7 +119,7 @@ pub struct User {
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDbEntry {
-    /// User's unique wallet address
+    /// User's unique governor wallet address
     pub wallet: Address,
     /// Quiz questionnaire solve result
     #[serde(default, skip_serializing_if = "Option::is_none")]

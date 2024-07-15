@@ -34,12 +34,12 @@ pub fn create_verify_account_response(
 
 pub fn create_verify_og_response(
     signer: &SbtRequestSigner,
-    wallet: Address,
+    gov_wallet: Address,
     og_wallet: Address,
     tx_hash: Hash,
     datetime: DateTime<Utc>,
 ) -> Result<VerifyResponse, AppError> {
-    let sbt_req = signer.build_signed_og_sbt_request(wallet, og_wallet, tx_hash, datetime)?;
+    let sbt_req = signer.build_signed_og_sbt_request(gov_wallet, og_wallet, tx_hash, datetime)?;
 
     let msg = general_purpose::STANDARD.encode(serde_json::to_string(&sbt_req)?);
 
@@ -48,10 +48,11 @@ pub fn create_verify_og_response(
 
 pub fn create_verify_node_owner_response(
     signer: &SbtRequestSigner,
-    wallet: Address,
+    gov_wallet: Address,
+    sno_wallet: Address,
     datetime: DateTime<Utc>,
 ) -> Result<VerifyResponse, AppError> {
-    let sbt_req = signer.build_signed_sno_sbt_request(wallet, datetime)?;
+    let sbt_req = signer.build_signed_sno_sbt_request(gov_wallet, sno_wallet, datetime)?;
 
     let msg = general_purpose::STANDARD.encode(serde_json::to_string(&sbt_req)?);
 

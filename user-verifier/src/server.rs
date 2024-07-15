@@ -149,7 +149,12 @@ async fn verify_node_owner_endpoint(
         .is_node_owner(node_owner_wallet)
         .await
     {
-        Ok(true) => create_verify_node_owner_response(&state.signer, node_owner_wallet, Utc::now()),
+        Ok(true) => create_verify_node_owner_response(
+            &state.signer,
+            req.user.wallet,
+            node_owner_wallet,
+            Utc::now(),
+        ),
         Ok(false) => Err(AppError::SNOVerificationNotAllowed),
         Err(e) => Err(e.into()),
     };
