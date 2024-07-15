@@ -172,7 +172,7 @@ async fn test_human_sbt() -> Result<(), anyhow::Error> {
     assert_matches!(err_already_exist, ApiError(web3::Error::Rpc(RPCError { message, .. })) if message.as_str() == ERR_SBT_ALREADY_EXIST);
 
     // Verify that Human SBT is minted correctly
-    let (user_id, _) = sbt_verify(&sbt_contract, wallet.address()).await?;
+    let (user_id, _) = gov_sbt_verify(&sbt_contract, wallet.address()).await?;
     assert_eq!(user_id.as_str(), "01020304-0506-1122-8877-665544332211");
 
     // Try to burn Human SBT
@@ -186,7 +186,7 @@ async fn test_human_sbt() -> Result<(), anyhow::Error> {
     .unwrap();
 
     // Verify that Human SBT doesn't exist anymore
-    let err_no_sbt = sbt_verify(&sbt_contract, wallet.address())
+    let err_no_sbt = gov_sbt_verify(&sbt_contract, wallet.address())
         .await
         .unwrap_err();
     assert_matches!(err_no_sbt, ApiError(web3::Error::Rpc(RPCError { message, .. })) if message.as_str() == ERR_SBT_EXPIRED_OR_NOT_EXIST);
@@ -303,7 +303,7 @@ async fn test_og_sbt() -> Result<(), anyhow::Error> {
     assert_matches!(err_already_exist, ApiError(web3::Error::Rpc(RPCError { message, .. })) if message.as_str() == ERR_SBT_ALREADY_EXIST);
 
     // Verify that OG SBT is minted correctly
-    let issued_at = og_sbt_verify(&sbt_contract, wallet.address()).await?;
+    let issued_at = sbt_verify(&sbt_contract, wallet.address()).await?;
     assert_ne!(issued_at, DateTime::<Utc>::from_timestamp(0, 0).unwrap());
 
     // Try to burn OG SBT
@@ -317,7 +317,115 @@ async fn test_og_sbt() -> Result<(), anyhow::Error> {
     .unwrap();
 
     // Verify that OG SBT doesn't exist anymore
-    let zero_date = og_sbt_verify(&sbt_contract, wallet.address()).await?;
+    let zero_date = sbt_verify(&sbt_contract, wallet.address()).await?;
+    assert_eq!(zero_date, DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_sno_sbt() -> Result<(), anyhow::Error> {
+    // Account #0 private key from Hardhat local node
+    let owner_secret = web3::signing::SecretKey::from_str(
+        "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+    )?;
+
+    // Account #1 private key from Hardhat local node
+    let signer_private_key =
+        hex::decode("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")?;
+    let signer_secret = web3::signing::SecretKey::from_slice(&signer_private_key)?;
+    let signer = web3::signing::SecretKeyRef::from(&signer_secret);
+    let signing_key = k256::SecretKey::from_slice(&signer_private_key)?;
+
+    // Account #19 private key from Hardhat local node
+    let wallet_secret = web3::signing::SecretKey::from_str(
+        "df57089febbacf7ba0bc227dafbffa9fc08a93fdc68e1e42411a14efcf23656e",
+    )?;
+    let wallet = web3::signing::SecretKeyRef::from(&wallet_secret);
+
+    // Default http url for Hardhat local node
+    let http = web3::transports::Http::new("http://127.0.0.1:8545")?;
+    let web3_client = web3::Web3::new(http);
+
+    let issuer_contract = load_contract(
+        web3_client.eth(),
+        "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+        include_str!("./artifacts/SNOSBTIssuer.json"),
+    )?;
+    assert!(has_role(&issuer_contract, "SIGN_PROVIDER_ROLE", signer.address()).await?);
+
+    let sbt_contract = load_contract(
+        web3_client.eth(),
+        "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+        include_str!("./artifacts/SNOSBT.json"),
+    )?;
+    assert!(has_role(&sbt_contract, "ISSUER_ROLE", issuer_contract.address()).await?);
+
+    let signer_config = signer::SignerConfig {
+        signing_key: signing_key.into(),
+        request_lifetime: std::time::Duration::from_secs(60),
+        sbt_lifetime: std::time::Duration::from_secs(3153600000),
+        og_eligible_before: Utc::now(),
+    };
+
+    let req_signer = signer::SbtRequestSigner::new(signer_config);
+    let req =
+        req_signer.build_signed_sno_sbt_request(wallet.address(), wallet.address(), Utc::now())?;
+
+    let signed_data = hex::decode(&req.data)?;
+    let sig_r: [u8; 32] = hex::decode(&req.r)?.try_into().map_err(|e| {
+        anyhow::Error::msg(format!(
+            "Signature R data is not 32 bytes length. Error: {e:?}"
+        ))
+    })?;
+    let sig_s: [u8; 32] = hex::decode(&req.s)?.try_into().map_err(|e| {
+        anyhow::Error::msg(format!(
+            "Signature S data is not 32 bytes length. Error: {e:?}"
+        ))
+    })?;
+
+    // Try to mint SNO SBT
+    signed_call(
+        &issuer_contract,
+        "sbtMint",
+        (
+            sbt_contract.address(),
+            signed_data.clone(),
+            req.v,
+            sig_r,
+            sig_s,
+        ),
+        &wallet_secret,
+    )
+    .await
+    .unwrap();
+    // Verify that SNO SBT can't be minted twice
+    let err_already_exist = signed_call(
+        &issuer_contract,
+        "sbtMint",
+        (sbt_contract.address(), signed_data, req.v, sig_r, sig_s),
+        &wallet_secret,
+    )
+    .await
+    .unwrap_err();
+    assert_matches!(err_already_exist, ApiError(web3::Error::Rpc(RPCError { message, .. })) if message.as_str() == ERR_SBT_ALREADY_EXIST);
+
+    // Verify that SNO SBT is minted correctly
+    let issued_at = sbt_verify(&sbt_contract, wallet.address()).await?;
+    assert_ne!(issued_at, DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+
+    // Try to burn OG SBT
+    signed_call(
+        &issuer_contract,
+        "sbtBurn",
+        (sbt_contract.address(), wallet.address()),
+        &owner_secret,
+    )
+    .await
+    .unwrap();
+
+    // Verify that OG SBT doesn't exist anymore
+    let zero_date = sbt_verify(&sbt_contract, wallet.address()).await?;
     assert_eq!(zero_date, DateTime::<Utc>::from_timestamp(0, 0).unwrap());
 
     Ok(())
@@ -436,7 +544,7 @@ pub async fn revoke_role<T: web3::Transport>(
         .map_err(anyhow::Error::from)
 }
 
-pub async fn sbt_verify<T: web3::Transport>(
+pub async fn gov_sbt_verify<T: web3::Transport>(
     contract: &web3::contract::Contract<T>,
     wallet_addr: ethabi::Address,
 ) -> contract::Result<(String, DateTime<Utc>)> {
@@ -456,7 +564,7 @@ pub async fn sbt_verify<T: web3::Transport>(
     ))
 }
 
-pub async fn og_sbt_verify<T: web3::Transport>(
+pub async fn sbt_verify<T: web3::Transport>(
     contract: &web3::contract::Contract<T>,
     wallet_addr: ethabi::Address,
 ) -> contract::Result<DateTime<Utc>> {
