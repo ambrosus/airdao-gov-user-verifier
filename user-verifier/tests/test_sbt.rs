@@ -3,17 +3,15 @@ use assert_matches::assert_matches;
 use chrono::{DateTime, Duration, Utc};
 use ethereum_types::U256;
 use jsonrpc_core::Error as RPCError;
-use serde::Serialize;
 use std::str::FromStr;
 use uuid::Uuid;
 use web3::{
-    api::Eth,
-    contract::{self, Contract, Error::Api as ApiError},
-    signing::{Key, SecretKey, SecretKeyRef},
-    types::{TransactionReceipt, TransactionRequest},
+    contract::{self, Error::Api as ApiError},
+    signing::Key,
+    types::TransactionRequest,
 };
 
-use airdao_gov_user_verifier::signer;
+use airdao_gov_user_verifier::{signer, tests::*};
 
 const ERR_SBT_EXPIRED_OR_NOT_EXIST: &str = "Error: VM Exception while processing transaction: reverted with reason string 'SBT expired or not exist'";
 const ERR_SBT_ALREADY_EXIST: &str = "Error: VM Exception while processing transaction: reverted with reason string 'This kind of SBT already exist'";
@@ -35,19 +33,21 @@ async fn test_roles() -> Result<(), anyhow::Error> {
     let http = web3::transports::Http::new("http://127.0.0.1:8545")?;
     let web3_client = web3::Web3::new(http);
 
-    let issuer_contract = load_contract(
+    let issuer_contract = deploy_contract(
         web3_client.eth(),
-        "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
         include_str!("./artifacts/HumanSBTIssuer.json"),
-    )?;
-
-    revoke_role(
-        &issuer_contract,
-        "SIGN_PROVIDER_ROLE",
-        signer.address(),
+        (),
         &owner_secret,
     )
     .await?;
+
+    // revoke_role(
+    //     &issuer_contract,
+    //     "SIGN_PROVIDER_ROLE",
+    //     signer.address(),
+    //     &owner_secret,
+    // )
+    // .await?;
     assert!(!(has_role(&issuer_contract, "SIGN_PROVIDER_ROLE", signer.address()).await?));
     grant_role(
         &issuer_contract,
@@ -58,19 +58,21 @@ async fn test_roles() -> Result<(), anyhow::Error> {
     .await?;
     assert!(has_role(&issuer_contract, "SIGN_PROVIDER_ROLE", signer.address()).await?);
 
-    let sbt_contract = load_contract(
+    let sbt_contract = deploy_upgradeable_contract(
         web3_client.eth(),
-        "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
         include_str!("./artifacts/HumanSBT.json"),
-    )?;
-
-    revoke_role(
-        &sbt_contract,
-        "ISSUER_ROLE",
-        issuer_contract.address(),
+        (),
         &owner_secret,
     )
     .await?;
+
+    // revoke_role(
+    //     &sbt_contract,
+    //     "ISSUER_ROLE",
+    //     issuer_contract.address(),
+    //     &owner_secret,
+    // )
+    // .await?;
     assert!(!(has_role(&sbt_contract, "ISSUER_ROLE", issuer_contract.address()).await?));
     grant_role(
         &sbt_contract,
@@ -108,30 +110,54 @@ async fn test_human_sbt() -> Result<(), anyhow::Error> {
     let http = web3::transports::Http::new("http://127.0.0.1:8545")?;
     let web3_client = web3::Web3::new(http);
 
-    let issuer_contract = load_contract(
+    let issuer_contract = deploy_contract(
         web3_client.eth(),
-        "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
         include_str!("./artifacts/HumanSBTIssuer.json"),
-    )?;
+        (),
+        &owner_secret,
+    )
+    .await?;
+
+    grant_role(
+        &issuer_contract,
+        "SIGN_PROVIDER_ROLE",
+        signer.address(),
+        &owner_secret,
+    )
+    .await?;
     assert!(has_role(&issuer_contract, "SIGN_PROVIDER_ROLE", signer.address()).await?);
 
-    let sbt_contract = load_contract(
+    let sbt_contract = deploy_upgradeable_contract(
         web3_client.eth(),
-        "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
         include_str!("./artifacts/HumanSBT.json"),
-    )?;
+        (),
+        &owner_secret,
+    )
+    .await?;
+
+    grant_role(
+        &sbt_contract,
+        "ISSUER_ROLE",
+        issuer_contract.address(),
+        &owner_secret,
+    )
+    .await?;
     assert!(has_role(&sbt_contract, "ISSUER_ROLE", issuer_contract.address()).await?);
 
     let signer_config = signer::SignerConfig {
         signing_key: signing_key.into(),
         request_lifetime: std::time::Duration::from_secs(60),
         sbt_lifetime: std::time::Duration::from_secs(3153600000),
-        og_eligible_before: Utc::now(),
+        og_eligible_before: get_latest_block_timestamp(web3_client.eth()).await?,
     };
 
     let req_signer = signer::SbtRequestSigner::new(signer_config);
     let user_id = uuid::Uuid::from_str("01020304-0506-1122-8877-665544332211")?.as_u128();
-    let req = req_signer.build_signed_sbt_request(wallet.address(), user_id, Utc::now())?;
+    let req = req_signer.build_signed_sbt_request(
+        wallet.address(),
+        user_id,
+        get_latest_block_timestamp(web3_client.eth()).await?,
+    )?;
 
     let signed_data = hex::decode(&req.data)?;
     let sig_r: [u8; 32] = hex::decode(&req.r)?.try_into().map_err(|e| {
@@ -156,6 +182,7 @@ async fn test_human_sbt() -> Result<(), anyhow::Error> {
             sig_r,
             sig_s,
         ),
+        None,
         &wallet_secret,
     )
     .await
@@ -165,6 +192,7 @@ async fn test_human_sbt() -> Result<(), anyhow::Error> {
         &issuer_contract,
         "sbtMint",
         (sbt_contract.address(), signed_data, req.v, sig_r, sig_s),
+        None,
         &wallet_secret,
     )
     .await
@@ -180,6 +208,7 @@ async fn test_human_sbt() -> Result<(), anyhow::Error> {
         &issuer_contract,
         "sbtBurn",
         (sbt_contract.address(), wallet.address()),
+        None,
         &owner_secret,
     )
     .await
@@ -235,25 +264,45 @@ async fn test_og_sbt() -> Result<(), anyhow::Error> {
 
     let tx_hash = web3_client.eth().send_transaction(tx).await?;
 
-    let issuer_contract = load_contract(
+    let issuer_contract = deploy_contract(
         web3_client.eth(),
-        "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
         include_str!("./artifacts/OGSBTIssuer.json"),
-    )?;
+        (),
+        &owner_secret,
+    )
+    .await?;
+
+    grant_role(
+        &issuer_contract,
+        "SIGN_PROVIDER_ROLE",
+        signer.address(),
+        &owner_secret,
+    )
+    .await?;
     assert!(has_role(&issuer_contract, "SIGN_PROVIDER_ROLE", signer.address()).await?);
 
-    let sbt_contract = load_contract(
+    let sbt_contract = deploy_upgradeable_contract(
         web3_client.eth(),
-        "0x0165878A594ca255338adfa4d48449f69242Eb8F",
         include_str!("./artifacts/OGSBT.json"),
-    )?;
+        (),
+        &owner_secret,
+    )
+    .await?;
+
+    grant_role(
+        &sbt_contract,
+        "ISSUER_ROLE",
+        issuer_contract.address(),
+        &owner_secret,
+    )
+    .await?;
     assert!(has_role(&sbt_contract, "ISSUER_ROLE", issuer_contract.address()).await?);
 
     let signer_config = signer::SignerConfig {
         signing_key: signing_key.into(),
         request_lifetime: std::time::Duration::from_secs(60),
         sbt_lifetime: std::time::Duration::from_secs(3153600000),
-        og_eligible_before: Utc::now(),
+        og_eligible_before: get_latest_block_timestamp(web3_client.eth()).await?,
     };
 
     let req_signer = signer::SbtRequestSigner::new(signer_config);
@@ -261,7 +310,7 @@ async fn test_og_sbt() -> Result<(), anyhow::Error> {
         wallet.address(),
         wallet.address(),
         tx_hash,
-        Utc::now(),
+        get_latest_block_timestamp(web3_client.eth()).await?,
     )?;
 
     let signed_data = hex::decode(&req.data)?;
@@ -287,6 +336,7 @@ async fn test_og_sbt() -> Result<(), anyhow::Error> {
             sig_r,
             sig_s,
         ),
+        None,
         &wallet_secret,
     )
     .await
@@ -296,6 +346,7 @@ async fn test_og_sbt() -> Result<(), anyhow::Error> {
         &issuer_contract,
         "sbtMint",
         (sbt_contract.address(), signed_data, req.v, sig_r, sig_s),
+        None,
         &wallet_secret,
     )
     .await
@@ -311,6 +362,7 @@ async fn test_og_sbt() -> Result<(), anyhow::Error> {
         &issuer_contract,
         "sbtBurn",
         (sbt_contract.address(), wallet.address()),
+        None,
         &owner_secret,
     )
     .await
@@ -347,30 +399,53 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
     let http = web3::transports::Http::new("http://127.0.0.1:8545")?;
     let web3_client = web3::Web3::new(http);
 
-    let issuer_contract = load_contract(
+    let issuer_contract = deploy_contract(
         web3_client.eth(),
-        "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
         include_str!("./artifacts/SNOSBTIssuer.json"),
-    )?;
+        (),
+        &owner_secret,
+    )
+    .await?;
+
+    grant_role(
+        &issuer_contract,
+        "SIGN_PROVIDER_ROLE",
+        signer.address(),
+        &owner_secret,
+    )
+    .await?;
     assert!(has_role(&issuer_contract, "SIGN_PROVIDER_ROLE", signer.address()).await?);
 
-    let sbt_contract = load_contract(
+    let sbt_contract = deploy_upgradeable_contract(
         web3_client.eth(),
-        "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
         include_str!("./artifacts/SNOSBT.json"),
-    )?;
+        (),
+        &owner_secret,
+    )
+    .await?;
+
+    grant_role(
+        &sbt_contract,
+        "ISSUER_ROLE",
+        issuer_contract.address(),
+        &owner_secret,
+    )
+    .await?;
     assert!(has_role(&sbt_contract, "ISSUER_ROLE", issuer_contract.address()).await?);
 
     let signer_config = signer::SignerConfig {
         signing_key: signing_key.into(),
         request_lifetime: std::time::Duration::from_secs(60),
         sbt_lifetime: std::time::Duration::from_secs(3153600000),
-        og_eligible_before: Utc::now(),
+        og_eligible_before: get_latest_block_timestamp(web3_client.eth()).await?,
     };
 
     let req_signer = signer::SbtRequestSigner::new(signer_config);
-    let req =
-        req_signer.build_signed_sno_sbt_request(wallet.address(), wallet.address(), Utc::now())?;
+    let req = req_signer.build_signed_sno_sbt_request(
+        wallet.address(),
+        wallet.address(),
+        get_latest_block_timestamp(web3_client.eth()).await?,
+    )?;
 
     let signed_data = hex::decode(&req.data)?;
     let sig_r: [u8; 32] = hex::decode(&req.r)?.try_into().map_err(|e| {
@@ -395,6 +470,7 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
             sig_r,
             sig_s,
         ),
+        None,
         &wallet_secret,
     )
     .await
@@ -404,6 +480,7 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
         &issuer_contract,
         "sbtMint",
         (sbt_contract.address(), signed_data, req.v, sig_r, sig_s),
+        None,
         &wallet_secret,
     )
     .await
@@ -419,6 +496,7 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
         &issuer_contract,
         "sbtBurn",
         (sbt_contract.address(), wallet.address()),
+        None,
         &owner_secret,
     )
     .await
@@ -429,119 +507,6 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
     assert_eq!(zero_date, DateTime::<Utc>::from_timestamp(0, 0).unwrap());
 
     Ok(())
-}
-
-pub fn to_bytes<T: Serialize>(structure: T) -> Result<Vec<u8>, serde_json::Error> {
-    let mut bytes = Vec::new();
-    serde_json::to_writer(&mut bytes, &structure).map(|_| bytes)
-}
-
-pub fn load_contract<T: web3::Transport>(
-    eth: Eth<T>,
-    address: &str,
-    artifact_text: &str,
-) -> anyhow::Result<Contract<T>> {
-    let sbt_address = ethereum_types::Address::from_str(address)?;
-    let artifact = serde_json::from_str::<serde_json::Value>(artifact_text)?;
-    let abi = artifact
-        .as_object()
-        .and_then(|map| map.get("abi").cloned())
-        .ok_or_else(|| anyhow::Error::msg("Not a valid contract artifact"))?;
-
-    serde_json::from_value::<ethabi::Contract>(abi)
-        .map(|abi| Contract::new(eth, sbt_address, abi))
-        .map_err(anyhow::Error::from)
-}
-
-pub async fn signed_call<T: web3::Transport, P: contract::tokens::Tokenize + Clone>(
-    contract: &Contract<T>,
-    method: &str,
-    params: P,
-    caller_secret: &SecretKey,
-) -> contract::Result<TransactionReceipt> {
-    let caller = SecretKeyRef::from(caller_secret);
-
-    let estimated_gas = contract
-        .estimate_gas(
-            method,
-            params.clone(),
-            caller.address(),
-            contract::Options::default(),
-        )
-        .await?;
-
-    contract
-        .signed_call_with_confirmations(
-            method,
-            params,
-            contract::Options {
-                gas: estimated_gas.checked_mul(2.into()),
-                ..Default::default()
-            },
-            0,
-            caller_secret,
-        )
-        .await
-        .map_err(contract::Error::Api)
-}
-
-pub async fn get_role_id<T: web3::Transport>(
-    contract: &web3::contract::Contract<T>,
-    role_name: &str,
-) -> contract::Result<[u8; 32]> {
-    contract
-        .query::<[u8; 32], _, _, _>(
-            role_name,
-            (),
-            contract.address(),
-            contract::Options::default(),
-            None,
-        )
-        .await
-        .map_err(contract::Error::from)
-}
-
-pub async fn has_role<T: web3::Transport>(
-    contract: &web3::contract::Contract<T>,
-    role_name: &str,
-    wallet_addr: ethabi::Address,
-) -> anyhow::Result<bool> {
-    let role_id = get_role_id(contract, role_name).await?;
-
-    contract
-        .query::<bool, _, _, _>(
-            "hasRole",
-            (role_id, wallet_addr),
-            wallet_addr,
-            contract::Options::default(),
-            None,
-        )
-        .await
-        .map_err(anyhow::Error::from)
-}
-
-pub async fn grant_role<T: web3::Transport>(
-    contract: &web3::contract::Contract<T>,
-    role_name: &str,
-    wallet_addr: ethabi::Address,
-    caller: &web3::signing::SecretKey,
-) -> contract::Result<TransactionReceipt> {
-    let role_id = get_role_id(contract, role_name).await?;
-
-    signed_call(contract, "grantRole", (role_id, wallet_addr), caller).await
-}
-
-pub async fn revoke_role<T: web3::Transport>(
-    contract: &web3::contract::Contract<T>,
-    role_name: &str,
-    wallet_addr: ethabi::Address,
-    caller: &web3::signing::SecretKey,
-) -> anyhow::Result<TransactionReceipt> {
-    let role_id = get_role_id(contract, role_name).await?;
-
-    signed_call(contract, "revokeRole", (role_id, wallet_addr), caller)
-        .await
-        .map_err(anyhow::Error::from)
 }
 
 pub async fn gov_sbt_verify<T: web3::Transport>(

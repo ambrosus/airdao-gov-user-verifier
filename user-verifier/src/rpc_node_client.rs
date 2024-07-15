@@ -11,7 +11,7 @@ pub struct RpcNodeClient {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RpcNodeConfig {
-    url: String,
+    pub url: String,
     #[serde(deserialize_with = "utils::de_secs_duration")]
     pub request_timeout: std::time::Duration,
 }
