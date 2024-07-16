@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use ethabi::{Address, Hash};
+use hex::ToHex;
 use reqwest::Client;
 use serde::Deserialize;
 use shared::utils;
@@ -18,8 +19,6 @@ pub struct ExplorerConfig {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Transaction {
-    pub from: Address,
-    pub to: Address,
     pub hash: Hash,
     #[serde(deserialize_with = "utils::de_secs_timestamp_i64")]
     pub timestamp: DateTime<Utc>,
@@ -60,7 +59,14 @@ impl ExplorerClient {
         wallet: Address,
         before: DateTime<Utc>,
     ) -> Result<Option<Hash>, reqwest::Error> {
-        let url = format!("{}{}/all", self.config.url.as_str(), wallet);
+        let url = format!(
+            "{}{}/all",
+            self.config.url.as_str(),
+            wallet.encode_hex::<String>()
+        );
+
+        tracing::debug!(%url, %wallet, "Request transactions for wallet");
+
         let mut page = 1u64;
 
         loop {
@@ -88,5 +94,32 @@ impl ExplorerClient {
         }
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+    use chrono::Utc;
+    use ethereum_types::Address;
+
+    use super::{ExplorerClient, ExplorerConfig};
+
+    #[tokio::test]
+    async fn test_find_first_transaction_before() {
+        let client = ExplorerClient::new(ExplorerConfig {
+            url: "https://explorer-v2-api.ambrosus.io/v2/addresses/".to_owned(),
+            timeout: std::time::Duration::from_secs(10),
+        })
+        .unwrap();
+
+        let wallet = Address::from(
+            <[u8; 20]>::try_from(hex::decode("aeE13A8db3e216A364255EFEbA171ce329100876").unwrap())
+                .unwrap(),
+        );
+        let tx = client
+            .find_first_transaction_before(wallet, Utc::now())
+            .await;
+        assert_matches!(tx, Ok(Some(_)));
     }
 }
