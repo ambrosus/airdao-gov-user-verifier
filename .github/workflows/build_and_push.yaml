@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - og-token-support
+      - server-node-operator-sbt
 
 jobs:
   build_and_publish_db:
