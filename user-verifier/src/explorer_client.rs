@@ -99,27 +99,58 @@ impl ExplorerClient {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
-    use chrono::Utc;
-    use ethereum_types::Address;
+    use super::*;
 
-    use super::{ExplorerClient, ExplorerConfig};
+    #[test]
+    fn test_de_response() {
+        let response = r#"{
+            "data": [{
+                "blockHash": "0x5256c76ad7a3809eaff33cacabf4d2747bb4a60e73cee32f50407f950f7af782",
+                "blockNumber": 31632033,
+                "from": "",
+                "to": "0xaeE13A8db3e216A364255EFEbA171ce329100876",
+                "gasCost": {
+                    "wei": "0",
+                    "ether": 0
+                },
+                "gasPrice": "0",
+                "gasSent": 0,
+                "gasUsed": 0,
+                "hash": "0x0f71f742aafc559fc6618a0ed3d2a640fab851f786bfe2143463a6f5571e798a",
+                "input": "-",
+                "logs": [],
+                "nonce": 0,
+                "status": "SUCCESS",
+                "timestamp": 1721135640,
+                "transactionIndex": -1,
+                "type": "TokenTransfer",
+                "parent": null,
+                "hasInners": false,
+                "value": {
+                    "wei": "8339991955835962979526",
+                    "ether": 8339.99195583596,
+                    "symbol": ""
+                },
+                "token": {
+                    "address": "0x8d4439F8AC1e5CCF37F9ACb527E59720E0ccA3E3",
+                    "name": "",
+                    "symbol": "",
+                    "decimals": 18,
+                    "totalSupply": 0
+                }
+            }],
+            "pagination": {
+                "totalCount": 2,
+                "pageCount": 2,
+                "perPage": 1,
+                "next": 2,
+                "hasNext": true,
+                "current": 1,
+                "previous": 1,
+                "hasPrevious": false
+            }
+        }"#;
 
-    #[tokio::test]
-    async fn test_find_first_transaction_before() {
-        let client = ExplorerClient::new(ExplorerConfig {
-            url: "https://explorer-v2-api.ambrosus.io/v2/addresses/".to_owned(),
-            timeout: std::time::Duration::from_secs(10),
-        })
-        .unwrap();
-
-        let wallet = Address::from(
-            <[u8; 20]>::try_from(hex::decode("aeE13A8db3e216A364255EFEbA171ce329100876").unwrap())
-                .unwrap(),
-        );
-        let tx = client
-            .find_first_transaction_before(wallet, Utc::now())
-            .await;
-        assert_matches!(tx, Ok(Some(_)));
+        serde_json::from_str::<ResponsePaged<Vec<Transaction>>>(response).unwrap();
     }
 }

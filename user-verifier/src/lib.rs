@@ -1,5 +1,6 @@
 mod error;
 
+pub mod explorer_client;
 pub mod rpc_node_client;
 pub mod server_nodes_manager;
 pub mod signer;
