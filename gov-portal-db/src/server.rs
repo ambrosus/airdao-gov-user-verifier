@@ -63,8 +63,7 @@ pub enum TokenQuery {
 #[derive(Debug, Deserialize)]
 pub struct UsersRequest {
     wallets: Vec<Address>,
-    #[serde(flatten)]
-    pub session: SessionToken,
+    pub token: SessionToken,
 }
 
 #[derive(Debug, Serialize)]
@@ -82,8 +81,7 @@ pub struct SignedQuizResponse {
 pub struct VerifyQuizRequest {
     pub answers: Vec<QuizAnswer>,
     pub quiz_token: String,
-    #[serde(flatten)]
-    pub session: SessionToken,
+    pub token: SessionToken,
 }
 
 /// JSON-serialized request passed as POST-data to `/update-user` endpoint and contains User's profile
@@ -92,16 +90,14 @@ pub struct VerifyQuizRequest {
 pub struct UpdateUserRequest {
     #[serde(flatten)]
     pub profile: UserProfile,
-    #[serde(flatten)]
-    pub session: SessionToken,
+    pub token: SessionToken,
 }
 
 /// JSON-serialized request passed as POST-data to `/check-email` endpoint
 #[derive(Debug, Deserialize)]
 pub struct CheckEmailRequest {
     email: serde_email::Email,
-    #[serde(flatten)]
-    pub session: SessionToken,
+    pub token: SessionToken,
 }
 
 /// JSON-serialized request passed as POST-data to `/verify-email` endpoint to send email verification link to user's email
@@ -109,8 +105,7 @@ pub struct CheckEmailRequest {
 pub struct VerifyEmailRequest {
     #[serde(flatten)]
     pub kind: VerifyEmailRequestKind,
-    #[serde(flatten)]
-    pub session: SessionToken,
+    pub token: SessionToken,
 }
 
 #[derive(Debug, Deserialize)]
@@ -247,13 +242,13 @@ async fn users_route(
 ) -> Result<Json<Vec<User>>, String> {
     tracing::debug!(
         "[/users] Request (session: {session:?}, wallets: {wallets})",
-        session = req.session,
+        session = req.token,
         wallets = req.wallets.len()
     );
 
     let wallets_max_count = std::cmp::min(req.wallets.len(), USERS_MAX_WALLETS_REQ_LIMIT);
 
-    let res = match state.session_manager.verify_token(&req.session) {
+    let res = match state.session_manager.verify_token(&req.token) {
         Ok(requestor) => state
             .users_manager
             .get_users_by_wallets(&requestor, &req.wallets[..wallets_max_count])
@@ -302,7 +297,7 @@ async fn verify_quiz_route(
 
     let token_res = match &quiz_req {
         req if req.verify(state.config.quiz.secret.as_bytes()) => {
-            state.session_manager.verify_token(&quiz_req.session)
+            state.session_manager.verify_token(&quiz_req.token)
         }
         _ => Err(anyhow::anyhow!("Invalid quiz token")),
     };
@@ -358,7 +353,7 @@ async fn update_user_route(
 ) -> Result<Json<()>, String> {
     tracing::debug!("[/update-user] Request {:?}", update_req);
 
-    let res = match state.session_manager.verify_token(&update_req.session) {
+    let res = match state.session_manager.verify_token(&update_req.token) {
         Ok(wallet) => state
             .users_manager
             .update_user_profile(wallet, update_req.profile)
@@ -380,7 +375,7 @@ async fn check_email_route(
 ) -> Result<Json<bool>, String> {
     tracing::debug!("[/check-email] Request {req:?}");
 
-    let res = match state.session_manager.verify_token(&req.session) {
+    let res = match state.session_manager.verify_token(&req.token) {
         Ok(_) => state.users_manager.is_email_being_used(&req.email).await,
         Err(e) => Err(e),
     }
@@ -411,7 +406,7 @@ async fn verify_email_route(
 
     let res = match state
         .session_manager
-        .verify_token(&req.session)
+        .verify_token(&req.token)
         .and_then(|wallet| {
             state
                 .users_manager
@@ -592,7 +587,7 @@ mod tests {
                 .map(|quiz_response| VerifyQuizRequest {
                     answers: vec![QuizAnswer::new("Q1", "V2")],
                     quiz_token: quiz_response.quiz_token,
-                    session: SessionToken::default(),
+                    token: SessionToken::default(),
                 })
                 .unwrap(),
                 expected: true,
@@ -633,7 +628,7 @@ mod tests {
                         QuizAnswer::new("Q1", "V2"),
                     ],
                     quiz_token: quiz_response.quiz_token,
-                    session: SessionToken::default(),
+                    token: SessionToken::default(),
                 })
                 .unwrap(),
                 expected: true,
@@ -674,7 +669,7 @@ mod tests {
                         QuizAnswer::new("Q2", "V2"),
                     ],
                     quiz_token: quiz_response.quiz_token,
-                    session: SessionToken::default(),
+                    token: SessionToken::default(),
                 })
                 .unwrap(),
                 expected: false,
@@ -693,7 +688,7 @@ mod tests {
                 .map(|quiz_response| VerifyQuizRequest {
                     answers: vec![QuizAnswer::new("Q1", "V2")],
                     quiz_token: quiz_response.quiz_token,
-                    session: SessionToken::default(),
+                    token: SessionToken::default(),
                 })
                 .unwrap(),
                 expected: false,
@@ -712,7 +707,7 @@ mod tests {
                 .map(|quiz_response| VerifyQuizRequest {
                     answers: vec![QuizAnswer::new("Q1", "V2")],
                     quiz_token: quiz_response.quiz_token,
-                    session: SessionToken::default(),
+                    token: SessionToken::default(),
                 })
                 .unwrap(),
                 expected: false,
