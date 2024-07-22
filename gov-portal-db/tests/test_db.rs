@@ -9,6 +9,49 @@ use shared::common::{EmailFrom, User, UserProfile, UserProfileStatus, WrappedCid
 use web3::types::Address;
 
 #[tokio::test]
+async fn test_server_status() -> Result<(), anyhow::Error> {
+    let mongo_config = mongo_client::MongoConfig {
+        url: Some("mongodb://localhost:27017".to_owned()),
+        db: "AirDAOGovPortal_IntegrationTest".to_owned(),
+        collection: "Users".to_owned(),
+        request_timeout: 10,
+    };
+
+    let users_manager = UsersManager::new(
+        &mongo_config,
+        UsersManagerConfig {
+            secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
+            lifetime: std::time::Duration::from_secs(600),
+            user_profile_attributes: UserProfileAttributes::default(),
+            email_verification: EmailVerificationConfig {
+                mailer_base_url: "http://mailer".try_into().unwrap(),
+                send_timeout: std::time::Duration::from_secs(10),
+                template_url: "https://registration?token={{VERIFICATION_TOKEN}}".to_string(),
+                from: EmailFrom {
+                    email: "gwg@airdao.io".try_into().unwrap(),
+                    name: "AirDAO Gov Portal".to_string(),
+                },
+                subject: "Complete Your Governor Email Verification".to_string(),
+            },
+            moderators: vec![],
+        },
+    )
+    .await?;
+
+    users_manager
+        .mongo_client
+        .collection
+        .delete_many(bson::doc! {})
+        .await?;
+
+    assert!(users_manager.mongo_client.server_status().await.is_ok());
+
+    users_manager.mongo_client.collection.drop().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_upsert_user() -> Result<(), anyhow::Error> {
     let mongo_config = mongo_client::MongoConfig {
         url: Some("mongodb://localhost:27017".to_owned()),
@@ -41,7 +84,7 @@ async fn test_upsert_user() -> Result<(), anyhow::Error> {
     users_manager
         .mongo_client
         .collection
-        .delete_many(bson::doc! {}, None)
+        .delete_many(bson::doc! {})
         .await?;
 
     let addr_1 = Address::from_low_u64_le(1);
@@ -72,7 +115,7 @@ async fn test_upsert_user() -> Result<(), anyhow::Error> {
         .upsert_user(addr_1, "test1@test.com".try_into()?)
         .await?;
 
-    users_manager.mongo_client.collection.drop(None).await?;
+    users_manager.mongo_client.collection.drop().await?;
 
     Ok(())
 }
@@ -118,7 +161,7 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
     users_manager
         .mongo_client
         .collection
-        .delete_many(bson::doc! {}, None)
+        .delete_many(bson::doc! {})
         .await?;
 
     futures_util::future::join_all((1u64..=9).map(|i| {
@@ -183,7 +226,7 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
         ]
     );
 
-    users_manager.mongo_client.collection.drop(None).await?;
+    users_manager.mongo_client.collection.drop().await?;
 
     Ok(())
 }
@@ -267,7 +310,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
     users_manager
         .mongo_client
         .collection
-        .delete_many(bson::doc! {}, None)
+        .delete_many(bson::doc! {})
         .await?;
 
     let quiz_result = quiz.verify_answers(vec![
@@ -341,7 +384,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
         })
     );
 
-    users_manager.mongo_client.collection.drop(None).await?;
+    users_manager.mongo_client.collection.drop().await?;
 
     Ok(())
 }

@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use ethabi::{Address, Hash};
 use hex::ToHex;
@@ -52,6 +53,16 @@ impl ExplorerClient {
             inner: Client::builder().timeout(config.timeout).build()?,
             config,
         })
+    }
+
+    pub async fn is_healthy(&self) -> anyhow::Result<bool> {
+        let url = [self.config.url.as_str(), "/healthz"].concat();
+
+        match self.inner.get(&url).send().await?.text().await.as_deref() {
+            Ok("OK") => Ok(true),
+            Ok(res) => Err(anyhow!("Unexpected health response: {res}")),
+            Err(e) => Err(anyhow!("Error: {e:?}")),
+        }
     }
 
     pub async fn find_first_transaction_before(

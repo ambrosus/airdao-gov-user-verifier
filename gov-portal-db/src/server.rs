@@ -1,4 +1,8 @@
-use axum::{extract::State, routing::post, Json, Router};
+use axum::{
+    extract::State,
+    routing::{get, post},
+    Json, Router,
+};
 use chrono::{DateTime, Utc};
 use ethereum_types::Address;
 use jsonwebtoken::TokenData;
@@ -150,6 +154,7 @@ pub async fn start(config: AppConfig, users_manager: Arc<UsersManager>) -> Resul
 
     let app = Router::new()
         .route("/token", post(token_route))
+        .route("/status", get(status_route))
         .route("/user", post(user_route))
         .route("/users", post(users_route))
         .route("/update-user", post(update_user_route))
@@ -184,6 +189,26 @@ async fn token_route(
     };
 
     tracing::debug!("[/token] Response {res:?}");
+
+    res.map(Json)
+}
+
+/// Route handler to read User's profile from MongoDB
+async fn status_route(
+    State(state): State<AppState>,
+    Json(token): Json<SessionToken>,
+) -> Result<Json<()>, String> {
+    tracing::debug!("[/status] Request {token:?}");
+
+    let res = state
+        .users_manager
+        .mongo_client
+        .server_status()
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string());
+
+    tracing::debug!("[/status] Response {res:?}");
 
     res.map(Json)
 }

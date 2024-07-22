@@ -14,6 +14,7 @@ use serde::Deserialize;
 /// MongoDB client
 #[derive(Clone)]
 pub struct MongoClient {
+    pub db: mongodb::Database,
     /// Collection being accessed by insert/update/query requests
     pub collection: Collection<Document>,
     /// MongoDB query maximum timeout
@@ -60,21 +61,32 @@ impl MongoClient {
             .await
             .and_then(Client::with_options)?;
 
-        let collection = initialize_collection(&inner, &config.db, &config.collection).await?;
+        // Get a handle to a database.
+        let db = inner.database(&config.db);
+
+        let collection = initialize_collection(&db, &config.collection).await?;
 
         Ok(Self {
+            db,
             collection,
             req_timeout: std::time::Duration::from_secs(config.request_timeout),
         })
     }
 
+    pub async fn server_status(&self) -> Result<bson::Document, mongodb::error::Error> {
+        self.db.run_command(bson::doc! { "serverStatus": 1 }).await
+    }
+
     /// Query request from collection by filter
     pub async fn find(
         &self,
-        filter: impl Into<Option<Document>>,
+        filter: impl Into<Document>,
         find_options: impl Into<Option<FindOptions>>,
     ) -> Result<Cursor<Document>, mongodb::error::Error> {
-        self.collection.find(filter, find_options).await
+        self.collection
+            .find(filter.into())
+            .with_options(find_options)
+            .await
     }
 
     /// Insert single document to collection
@@ -84,7 +96,7 @@ impl MongoClient {
         doc: impl std::borrow::Borrow<Document>,
         options: impl Into<Option<InsertOneOptions>>,
     ) -> Result<InsertOneResult, mongodb::error::Error> {
-        self.collection.insert_one(doc, options).await
+        self.collection.insert_one(doc).with_options(options).await
     }
 
     /// Updates single document in collection by filter query
@@ -94,29 +106,28 @@ impl MongoClient {
         update: impl Into<UpdateModifications>,
         options: impl Into<Option<UpdateOptions>>,
     ) -> Result<UpdateResult, mongodb::error::Error> {
-        self.collection.update_one(query, update, options).await
+        self.collection
+            .update_one(query, update)
+            .with_options(options)
+            .await
     }
 }
 
 async fn initialize_collection(
-    client: &Client,
-    db_name: &str,
+    db: &mongodb::Database,
     collection_name: &str,
 ) -> anyhow::Result<Collection<Document>> {
-    // Get a handle to a database.
-    let db = client.database(db_name);
-
     // Get a handle to a collection in the database.
     let collection = db.collection::<Document>(collection_name);
 
     // Create new collection (if not present in database) and unique index by wallet address
     if !db
-        .list_collection_names(None)
+        .list_collection_names()
         .await?
         .into_iter()
         .any(|it| it.as_str() == collection_name)
     {
-        db.create_collection(collection_name, None).await?;
+        db.create_collection(collection_name).await?;
     }
 
     let indexes = collection.list_index_names().await?;
@@ -130,7 +141,6 @@ async fn initialize_collection(
                     })
                     .options(Some(IndexOptions::builder().unique(true).build()))
                     .build(),
-                None,
             )
             .await?;
     }
@@ -144,7 +154,6 @@ async fn initialize_collection(
                     })
                     .options(Some(IndexOptions::builder().unique(true).build()))
                     .build(),
-                None,
             )
             .await?;
     }

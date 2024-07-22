@@ -1,6 +1,11 @@
-use axum::{extract::State, routing::post, Json, Router};
+use axum::{
+    extract::State,
+    routing::{get, post},
+    Json, Router,
+};
 use chrono::Utc;
 use ethereum_types::Address;
+use serde::Serialize;
 use std::str::FromStr;
 use tower_http::cors::CorsLayer;
 
@@ -32,6 +37,13 @@ pub struct AppState {
     pub server_nodes_manager: ServerNodesManager,
 }
 
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusResponse {
+    server_nodes_manager: Result<bool, String>,
+    explorer: Result<bool, String>,
+}
+
 impl AppState {
     pub fn new(config: AppConfig) -> Result<Self, AppError> {
         Ok(Self {
@@ -56,6 +68,7 @@ pub async fn start(config: AppConfig) -> Result<(), AppError> {
     let state = AppState::new(config.clone())?;
 
     let app = Router::new()
+        .route("/status", get(status_endpoint))
         .route("/verify", post(verify_endpoint))
         .route("/verify_og", post(verify_og_endpoint))
         .route("/verify_node_owner", post(verify_node_owner_endpoint))
@@ -67,6 +80,30 @@ pub async fn start(config: AppConfig) -> Result<(), AppError> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     axum::serve(listener, app).await.map_err(AppError::from)
+}
+
+async fn status_endpoint(
+    State(state): State<AppState>,
+    Json(_): Json<()>,
+) -> Result<Json<StatusResponse>, AppError> {
+    tracing::debug!("Status reguest");
+
+    let result = Ok(StatusResponse {
+        server_nodes_manager: state
+            .server_nodes_manager
+            .is_active()
+            .await
+            .map_err(|e| e.to_string()),
+        explorer: state
+            .explorer_client
+            .is_healthy()
+            .await
+            .map_err(|e| e.to_string()),
+    });
+
+    tracing::debug!("Response: {result:?}");
+
+    result.map(Json)
 }
 
 async fn verify_endpoint(

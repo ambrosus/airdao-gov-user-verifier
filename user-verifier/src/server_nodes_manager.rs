@@ -21,6 +21,17 @@ impl ServerNodesManager {
         })
     }
 
+    pub async fn is_active(&self) -> contract::Result<bool> {
+        tokio::time::timeout(
+            self.request_timeout,
+            self.contract
+                .query("paused", (), None, contract::Options::default(), None),
+        )
+        .await
+        .map_err(|_| contract::Error::Api(web3::Error::Io(std::io::ErrorKind::TimedOut.into())))?
+        .map(|paused: bool| !paused)
+    }
+
     pub async fn is_node_owner(&self, wallet: Address) -> contract::Result<bool> {
         let nodes = self.get_user_stakes_list(wallet).await?;
         let onboarding_nodes = self
