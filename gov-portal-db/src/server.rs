@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    routing::{get, post},
-    Json, Router,
-};
+use axum::{extract::State, routing::post, Json, Router};
 use chrono::{DateTime, Utc};
 use ethereum_types::Address;
 use jsonwebtoken::TokenData;
@@ -159,7 +155,7 @@ pub async fn start(
 
     let app = Router::new()
         .route("/token", post(token_route))
-        .route("/status", get(status_route))
+        .route("/status", post(status_route))
         .route("/user", post(user_route))
         .route("/users", post(users_route))
         .route("/update-user", post(update_user_route))
