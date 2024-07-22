@@ -1,9 +1,10 @@
+use anyhow::anyhow;
 use base64::{engine::general_purpose, Engine};
 use chrono::{DateTime, TimeZone, Utc};
 use cid::Cid;
 use ethabi::{encode, Address, ParamType, Token};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use std::{fmt::Display, str::FromStr, time::Duration};
+use std::{fmt::Display, ops::Deref, str::FromStr, time::Duration};
 
 use crate::utils::{self, decode_sbt_request};
 
@@ -317,20 +318,54 @@ impl User {
 }
 
 /// Session JWT token for an access to MongoDB
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SessionToken {
-    pub token: String,
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct SessionToken(String);
+
+impl std::fmt::Display for SessionToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<String> for SessionToken {
+    fn as_ref(&self) -> &String {
+        &self.0
+    }
+}
+
+impl Deref for SessionToken {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_str()
+    }
+}
+
+impl From<&str> for SessionToken {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
 }
 
 /// The claims part of session JWT token
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawSessionToken {
-    /// User's wallet address
-    #[serde(rename = "wallet")]
-    pub checksum_wallet: String,
+    /// Session token kind
+    pub kind: SessionTokenKind,
     /// Expiration date for a session JWT token
     pub expires_at: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SessionTokenKind {
+    Wallet {
+        /// User's gov wallet address
+        #[serde(rename = "wallet")]
+        checksum_wallet: String,
+    },
+    Internal,
 }
 
 impl RawSessionToken {
@@ -349,24 +384,56 @@ impl SessionToken {
             &jsonwebtoken::EncodingKey::from_secret(secret),
         )
         .map_err(anyhow::Error::from)
-        .map(|token| Self { token })
+        .map(Self)
     }
 
     /// Verifies that session JWT token is valid and not expired. Returns extracted User's wallet address
-    pub fn verify(&self, secret: &[u8]) -> Result<String, anyhow::Error> {
+    pub fn verify_wallet(&self, secret: &[u8]) -> Result<String, anyhow::Error> {
         let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::default());
         validation.set_required_spec_claims(&<[&str; 0]>::default());
 
-        let token_data = jsonwebtoken::decode::<RawSessionToken>(
-            &self.token,
+        let token = jsonwebtoken::decode::<RawSessionToken>(
+            self.as_ref(),
             &jsonwebtoken::DecodingKey::from_secret(secret),
             &validation,
-        )?;
+        )?
+        .claims;
 
-        if !token_data.claims.verify() {
-            Err(anyhow::Error::msg("Session token expired"))
-        } else {
-            Ok(token_data.claims.checksum_wallet)
+        if !token.verify() {
+            return Err(anyhow!("Session token expired"));
+        }
+
+        match token {
+            RawSessionToken {
+                kind: SessionTokenKind::Wallet { checksum_wallet },
+                ..
+            } => Ok(checksum_wallet),
+            _ => Err(anyhow!("Invalid session token kind")),
+        }
+    }
+
+    /// Verifies that session JWT token is valid for internal usage and not expired
+    pub fn verify_internal(&self, secret: &[u8]) -> Result<(), anyhow::Error> {
+        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::default());
+        validation.set_required_spec_claims(&<[&str; 0]>::default());
+
+        let token = jsonwebtoken::decode::<RawSessionToken>(
+            self.as_ref(),
+            &jsonwebtoken::DecodingKey::from_secret(secret),
+            &validation,
+        )?
+        .claims;
+
+        if !token.verify() {
+            return Err(anyhow!("Session token expired"));
+        }
+
+        match token {
+            RawSessionToken {
+                kind: SessionTokenKind::Internal,
+                ..
+            } => Ok(()),
+            _ => Err(anyhow!("Invalid session token kind")),
         }
     }
 }
@@ -385,15 +452,10 @@ impl std::str::FromStr for WalletSignedMessage {
     fn from_str(encoded_message: &str) -> Result<Self, Self::Err> {
         let decoded = general_purpose::STANDARD
             .decode(encoded_message)
-            .map_err(|e| {
-                anyhow::Error::msg(format!(
-                    "Failed to deserialize base64 encoded message {e:?}"
-                ))
-            })?;
+            .map_err(|e| anyhow!("Failed to deserialize base64 encoded message {e:?}"))?;
 
-        serde_json::from_slice::<WalletSignedMessage>(&decoded).map_err(|e| {
-            anyhow::Error::msg(format!("Failed to deserialize wallet signed message {e:?}"))
-        })
+        serde_json::from_slice::<WalletSignedMessage>(&decoded)
+            .map_err(|e| anyhow!("Failed to deserialize wallet signed message {e:?}"))
     }
 }
 

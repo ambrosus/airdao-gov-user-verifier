@@ -362,7 +362,7 @@ async fn verify_wallet_route(
     let (page_name, session_token) = match req {
         VerifyWalletQuery::WalletSignedMessage { data } => {
             match state.acquire_session_token(data).await {
-                Ok(SessionToken { token }) => ("valid-message.html", Ok(Some(token))),
+                Ok(token) => ("valid-message.html", Ok(Some(token))),
                 Err(e) => (
                     "error.html",
                     Err(format!("Failed to acquire session token. Error: {e:?}")),
@@ -384,7 +384,7 @@ async fn verify_wallet_route(
             Html(
                 content
                     .replace("{{ERROR_TEXT}}", &error_text.unwrap_or_default())
-                    .replace("{{SESSION}}", &session_token.unwrap_or_default()),
+                    .replace("{{SESSION}}", session_token.as_deref().unwrap_or_default()),
             )
         })
         .ok_or_else(|| "Resource Not Found".to_owned())

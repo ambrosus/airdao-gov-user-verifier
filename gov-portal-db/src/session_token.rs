@@ -1,7 +1,7 @@
 use chrono::Utc;
 use ethereum_types::Address;
 use serde::Deserialize;
-use shared::common::{RawSessionToken, SessionToken, WalletSignedMessage};
+use shared::common::{RawSessionToken, SessionToken, SessionTokenKind, WalletSignedMessage};
 use std::str::FromStr;
 use tokio::time::Duration;
 
@@ -33,7 +33,9 @@ impl SessionManager {
             .and_then(|wallet| {
                 SessionToken::new(
                     RawSessionToken {
-                        checksum_wallet: shared::utils::get_checksum_address(&wallet),
+                        kind: SessionTokenKind::Wallet {
+                            checksum_wallet: shared::utils::get_checksum_address(&wallet),
+                        },
                         expires_at: (Utc::now() + self.config.lifetime).timestamp_millis() as u64,
                     },
                     self.config.secret.as_bytes(),
@@ -42,18 +44,39 @@ impl SessionManager {
             .map_err(|e| anyhow::Error::msg(format!("Failed to generate JWT token. Error: {}", e)))
     }
 
+    /// Acquires a session JWT token to get an access to MongoDB for internal usage
+    pub fn acquire_internal_token_with_lifetime(
+        &self,
+        lifetime: Duration,
+    ) -> Result<SessionToken, anyhow::Error> {
+        SessionToken::new(
+            RawSessionToken {
+                kind: SessionTokenKind::Internal,
+                expires_at: (Utc::now() + lifetime).timestamp_millis() as u64,
+            },
+            self.config.secret.as_bytes(),
+        )
+    }
+
     /// Verifies session JWT token and extracts owning user wallet address
     pub fn verify_token(&self, token: &SessionToken) -> Result<Address, anyhow::Error> {
         let wallet = <[u8; 20]>::try_from(
-            hex::decode(token.verify(self.config.secret.as_bytes())?)?.as_slice(),
+            hex::decode(token.verify_wallet(self.config.secret.as_bytes())?)?.as_slice(),
         )?;
 
         Ok(ethereum_types::Address::from(&wallet))
+    }
+
+    /// Verifies internal session JWT token
+    pub fn verify_internal_token(&self, token: &SessionToken) -> Result<(), anyhow::Error> {
+        token.verify_internal(self.config.secret.as_bytes())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::SessionManager;
 
     #[test]
@@ -64,5 +87,17 @@ mod tests {
         });
 
         session_manager.acquire_token("eyJtc2ciOiI1NDY1NzM3NDIwNGQ2NTczNzM2MTY3NjUiLCJzaWduIjoiM2E2NjUyOTBlZjEyMTAxNjE5OGEzZjI2ODA5NzY0ZGE0ODQzNzg3NWRjNTY1YmYwY2FhY2Q4OWFhYjMzYmM3MDBjMGIwOWE1ZDdiYjI2MmFkZmNkODEwOGI5NjNkZGVhYTJhNmZiNzFhYTRlYjU5OTIxMWY4M2E4NTIyNzY4MzAxYyJ9").unwrap();
+    }
+
+    #[test]
+    fn test_acquire_internal_token() {
+        let session_manager = SessionManager::new(super::SessionConfig {
+            lifetime: tokio::time::Duration::from_secs(180),
+            secret: "TestSecretForJWT".to_owned(),
+        });
+
+        session_manager
+            .acquire_internal_token_with_lifetime(Duration::from_secs(1000))
+            .unwrap();
     }
 }

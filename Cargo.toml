@@ -61,3 +61,4 @@ rand = "0"
 anyhow = "1"
 dotenv = "0"
 sendgrid = "0"
+clap = { version = "4", features = ["derive"] }

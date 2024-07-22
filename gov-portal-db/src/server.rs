@@ -39,12 +39,13 @@ impl AppState {
     pub async fn new(
         config: AppConfig,
         users_manager: Arc<UsersManager>,
+        session_manager: SessionManager,
     ) -> Result<Self, AppError> {
         Ok(Self {
             quiz: Quiz {
                 config: config.quiz.clone(),
             },
-            session_manager: SessionManager::new(config.session.clone()),
+            session_manager,
             users_manager,
             config,
         })
@@ -144,13 +145,17 @@ impl VerifyEmailRequest {
     }
 }
 
-pub async fn start(config: AppConfig, users_manager: Arc<UsersManager>) -> Result<(), AppError> {
+pub async fn start(
+    config: AppConfig,
+    users_manager: Arc<UsersManager>,
+    session_manager: SessionManager,
+) -> Result<(), AppError> {
     let addr = config
         .listen_address
         .parse::<std::net::SocketAddr>()
         .expect("Can't parse socket address");
 
-    let state = AppState::new(config, users_manager).await?;
+    let state = AppState::new(config, users_manager, session_manager).await?;
 
     let app = Router::new()
         .route("/token", post(token_route))
@@ -200,13 +205,17 @@ async fn status_route(
 ) -> Result<Json<()>, String> {
     tracing::debug!("[/status] Request {token:?}");
 
-    let res = state
-        .users_manager
-        .mongo_client
-        .server_status()
-        .await
-        .map(|_| ())
-        .map_err(|e| e.to_string());
+    let res = match state.session_manager.verify_internal_token(&token) {
+        Ok(_) => state
+            .users_manager
+            .mongo_client
+            .server_status()
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+
+        Err(e) => Err(format!("Request failure. Error: {e}")),
+    };
 
     tracing::debug!("[/status] Response {res:?}");
 
@@ -587,7 +596,7 @@ mod tests {
                 .map(|quiz_response| VerifyQuizRequest {
                     answers: vec![QuizAnswer::new("Q1", "V2")],
                     quiz_token: quiz_response.quiz_token,
-                    session: default_session_token(),
+                    session: SessionToken::default(),
                 })
                 .unwrap(),
                 expected: true,
@@ -628,7 +637,7 @@ mod tests {
                         QuizAnswer::new("Q1", "V2"),
                     ],
                     quiz_token: quiz_response.quiz_token,
-                    session: default_session_token(),
+                    session: SessionToken::default(),
                 })
                 .unwrap(),
                 expected: true,
@@ -669,7 +678,7 @@ mod tests {
                         QuizAnswer::new("Q2", "V2"),
                     ],
                     quiz_token: quiz_response.quiz_token,
-                    session: default_session_token(),
+                    session: SessionToken::default(),
                 })
                 .unwrap(),
                 expected: false,
@@ -688,7 +697,7 @@ mod tests {
                 .map(|quiz_response| VerifyQuizRequest {
                     answers: vec![QuizAnswer::new("Q1", "V2")],
                     quiz_token: quiz_response.quiz_token,
-                    session: default_session_token(),
+                    session: SessionToken::default(),
                 })
                 .unwrap(),
                 expected: false,
@@ -707,7 +716,7 @@ mod tests {
                 .map(|quiz_response| VerifyQuizRequest {
                     answers: vec![QuizAnswer::new("Q1", "V2")],
                     quiz_token: quiz_response.quiz_token,
-                    session: default_session_token(),
+                    session: SessionToken::default(),
                 })
                 .unwrap(),
                 expected: false,
@@ -760,12 +769,6 @@ mod tests {
                 question: question.to_string(),
                 variant: answer.to_string(),
             }
-        }
-    }
-
-    fn default_session_token() -> SessionToken {
-        SessionToken {
-            token: "".to_string(),
         }
     }
 }

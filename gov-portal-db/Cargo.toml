@@ -55,6 +55,7 @@ base64 = { workspace = true }
 anyhow = { workspace = true }
 dotenv = { workspace = true }
 rand = { workspace = true }
+clap = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
