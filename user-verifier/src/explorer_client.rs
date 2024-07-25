@@ -25,6 +25,7 @@ pub struct Transaction {
     pub timestamp: DateTime<Utc>,
 }
 
+#[allow(unused)]
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Pagination {

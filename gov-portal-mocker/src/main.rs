@@ -559,7 +559,7 @@ impl AppState {
     ) -> Result<SessionToken, anyhow::Error> {
         let raw_data = self
             .client
-            .post(&[&self.config.user_db.base_url, "/token"].concat())
+            .post([&self.config.user_db.base_url, "/token"].concat())
             .json(&json!({"data": &encoded_msg}))
             .send()
             .await?
@@ -577,7 +577,7 @@ impl AppState {
     ) -> Result<(), anyhow::Error> {
         let raw_data = self
             .client
-            .post(&[&self.config.user_db.base_url, "/verify-email"].concat())
+            .post([&self.config.user_db.base_url, "/verify-email"].concat())
             .json(&json!({"token": token, "old_email": old_email, "email": email}))
             .send()
             .await?
@@ -590,7 +590,7 @@ impl AppState {
     async fn update_email(&self, token: &str) -> Result<(), anyhow::Error> {
         let raw_data = self
             .client
-            .post(&[&self.config.user_db.base_url, "/update-email"].concat())
+            .post([&self.config.user_db.base_url, "/update-email"].concat())
             .json(&json!({"token": token}))
             .send()
             .await?
@@ -603,7 +603,7 @@ impl AppState {
     async fn get_user(&self, token: &str) -> Result<User, anyhow::Error> {
         let raw_data = self
             .client
-            .post(&[&self.config.user_db.base_url, "/user"].concat())
+            .post([&self.config.user_db.base_url, "/user"].concat())
             .json(&json!({"token": token}))
             .send()
             .await?
@@ -626,7 +626,7 @@ impl AppState {
     ) -> Result<(), anyhow::Error> {
         let raw_data = self
             .client
-            .post(&[&self.config.user_db.base_url, "/update-user"].concat())
+            .post([&self.config.user_db.base_url, "/update-user"].concat())
             .json(&json!({
                 "token": token,
                 "name": name,

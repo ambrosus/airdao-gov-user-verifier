@@ -29,6 +29,7 @@ pub struct VerifiedUser {
     pub status: UserStatus,
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone)]
 pub struct UserStatus {
     pub uniqueness: VerificationStatus,

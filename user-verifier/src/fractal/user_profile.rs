@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use super::utils;
 
+#[allow(unused)]
 #[derive(Deserialize, Debug)]
 pub struct UserProfile {
     #[serde(deserialize_with = "utils::de_from_uuid")]
@@ -40,16 +41,19 @@ impl From<Uuid> for UserId {
     }
 }
 
+#[allow(unused)]
 #[derive(Deserialize, Debug)]
 pub struct Email {
     pub address: String,
 }
 
+#[allow(unused)]
 #[derive(Deserialize, Debug)]
 pub struct Phone {
     pub number: String,
 }
 
+#[allow(unused)]
 #[derive(Deserialize, Debug)]
 pub struct Wallet {
     pub id: String,
@@ -57,6 +61,7 @@ pub struct Wallet {
     pub currency: String,
 }
 
+#[allow(unused)]
 #[derive(Deserialize, Debug)]
 pub struct VerificationCase {
     pub id: String,
