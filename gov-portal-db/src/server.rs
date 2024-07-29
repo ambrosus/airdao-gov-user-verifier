@@ -179,7 +179,7 @@ async fn token_route(
     let res = match req {
         TokenQuery::Message { data } => state
             .session_manager
-            .acquire_token(&data)
+            .acquire_token_with_wallet_signed_message(&data)
             .map_err(|e| e.to_string()),
         TokenQuery::NoMessage {} => Err("Resource Not Found".to_owned()),
     };

@@ -26,7 +26,10 @@ impl SessionManager {
 
     /// Acquires a session JWT token to get an access to MongoDB for an eligible user who has proven
     /// his access to a wallet by signing a messgae
-    pub fn acquire_token(&self, encoded_message: &str) -> Result<SessionToken, anyhow::Error> {
+    pub fn acquire_token_with_wallet_signed_message(
+        &self,
+        encoded_message: &str,
+    ) -> Result<SessionToken, anyhow::Error> {
         let signed_message = WalletSignedMessage::from_str(encoded_message)?;
 
         shared::utils::recover_eth_address(signed_message)
@@ -86,7 +89,7 @@ mod tests {
             secret: "TestSecretForJWT".to_owned(),
         });
 
-        session_manager.acquire_token("eyJtc2ciOiI1NDY1NzM3NDIwNGQ2NTczNzM2MTY3NjUiLCJzaWduIjoiM2E2NjUyOTBlZjEyMTAxNjE5OGEzZjI2ODA5NzY0ZGE0ODQzNzg3NWRjNTY1YmYwY2FhY2Q4OWFhYjMzYmM3MDBjMGIwOWE1ZDdiYjI2MmFkZmNkODEwOGI5NjNkZGVhYTJhNmZiNzFhYTRlYjU5OTIxMWY4M2E4NTIyNzY4MzAxYyJ9").unwrap();
+        session_manager.acquire_token_with_wallet_signed_message("eyJtc2ciOiI1NDY1NzM3NDIwNGQ2NTczNzM2MTY3NjUiLCJzaWduIjoiM2E2NjUyOTBlZjEyMTAxNjE5OGEzZjI2ODA5NzY0ZGE0ODQzNzg3NWRjNTY1YmYwY2FhY2Q4OWFhYjMzYmM3MDBjMGIwOWE1ZDdiYjI2MmFkZmNkODEwOGI5NjNkZGVhYTJhNmZiNzFhYTRlYjU5OTIxMWY4M2E4NTIyNzY4MzAxYyJ9").unwrap();
     }
 
     #[test]

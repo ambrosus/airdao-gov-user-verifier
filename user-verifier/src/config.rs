@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use crate::{
     explorer_client::ExplorerConfig, fractal::FractalConfig, rpc_node_client::RpcNodeConfig,
-    signer::SignerConfig,
+    server_nodes_manager::ServerNodesManagerConfig, signer::SignerConfig,
 };
 
 #[derive(Deserialize, Debug, Clone)]
@@ -14,5 +14,5 @@ pub struct AppConfig {
     pub users_manager_secret: String,
     pub explorer: ExplorerConfig,
     pub rpc_node: RpcNodeConfig,
-    pub server_nodes_manager_address: ethabi::Address,
+    pub server_nodes_manager: ServerNodesManagerConfig,
 }

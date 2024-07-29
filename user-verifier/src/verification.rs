@@ -50,9 +50,15 @@ pub fn create_verify_node_owner_response(
     signer: &SbtRequestSigner,
     gov_wallet: Address,
     sno_wallet: Address,
+    server_nodes_manager: Address,
     datetime: DateTime<Utc>,
 ) -> Result<VerifyResponse, AppError> {
-    let sbt_req = signer.build_signed_sno_sbt_request(gov_wallet, sno_wallet, datetime)?;
+    let sbt_req = signer.build_signed_sno_sbt_request(
+        gov_wallet,
+        sno_wallet,
+        server_nodes_manager,
+        datetime,
+    )?;
 
     let msg = general_purpose::STANDARD.encode(serde_json::to_string(&sbt_req)?);
 

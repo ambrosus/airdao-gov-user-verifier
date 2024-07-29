@@ -1,11 +1,10 @@
 #![cfg(feature = "enable-integration-tests")]
-use assert_matches::assert_matches;
 use std::str::FromStr;
 use web3::signing::Key;
 
 use airdao_gov_user_verifier::{
     rpc_node_client::{RpcNodeClient, RpcNodeConfig},
-    server_nodes_manager::ServerNodesManager,
+    server_nodes_manager::{ServerNodesManager, ServerNodesManagerConfig},
     tests::*,
 };
 
@@ -18,6 +17,12 @@ async fn test_node_owner() -> Result<(), anyhow::Error> {
         "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
     )?;
 
+    // Account #18 private key from Hardhat local node
+    let node_wallet_secret = web3::signing::SecretKey::from_str(
+        "de9be858da4a475276426320d5e9262ecfc3ba460bfac56360bfa6c4c28b4ee0",
+    )?;
+    let node_wallet = web3::signing::SecretKeyRef::from(&node_wallet_secret);
+
     // Account #19 private key from Hardhat local node
     let wallet_secret = web3::signing::SecretKey::from_str(
         "df57089febbacf7ba0bc227dafbffa9fc08a93fdc68e1e42411a14efcf23656e",
@@ -26,11 +31,15 @@ async fn test_node_owner() -> Result<(), anyhow::Error> {
 
     // Default http url for Hardhat local node
     let http = web3::transports::Http::new("http://127.0.0.1:8545")?;
+
+    // Set miner address to be able to call `ValidatorSet::process()` method
+    let _ = hardhat_set_coinbase(&http, node_wallet.address()).await?;
+
     let web3_client = web3::Web3::new(http);
 
     let validator_set_contract = deploy_upgradeable_contract(
         web3_client.eth(),
-        include_str!("./artifacts/ValidatorSet.json"),
+        include_str!("../artifacts/ValidatorSet.json"),
         (
             ethereum_types::Address::zero(),
             ethereum_types::U256::zero(),
@@ -85,19 +94,26 @@ async fn test_node_owner() -> Result<(), anyhow::Error> {
         url: "http://127.0.0.1:8545".to_owned(),
         request_timeout: std::time::Duration::from_secs(10),
     })?;
-    let server_nodes_manager =
-        ServerNodesManager::new(server_nodes_manager_contract.address(), rpc_node_client)?;
+    let server_nodes_manager = ServerNodesManager::new(
+        &ServerNodesManagerConfig {
+            contract: server_nodes_manager_contract.address(),
+            max_allowed_time_since_last_reward: std::time::Duration::from_secs(3600),
+        },
+        rpc_node_client,
+    )
+    .await?;
 
     // Shouldn't be a node owner
-    assert_matches!(
-        server_nodes_manager.is_node_owner(wallet.address()).await,
-        Ok(false)
+    assert!(
+        !server_nodes_manager
+            .is_validator_node_owner(wallet.address())
+            .await?,
     );
 
     signed_call(
         &server_nodes_manager_contract,
         "newStake",
-        (ethereum_types::Address::zero(), wallet.address()),
+        (node_wallet.address(), wallet.address()),
         Some(ethereum_types::U256::one()),
         &wallet_secret,
     )
@@ -110,9 +126,10 @@ async fn test_node_owner() -> Result<(), anyhow::Error> {
     // );
 
     // Node stake created, but it is still in onboarding list
-    assert_matches!(
-        server_nodes_manager.is_node_owner(wallet.address()).await,
-        Ok(false)
+    assert!(
+        !server_nodes_manager
+            .is_validator_node_owner(wallet.address())
+            .await?,
     );
 
     signed_call(
@@ -124,16 +141,33 @@ async fn test_node_owner() -> Result<(), anyhow::Error> {
     )
     .await?;
 
-    // Node stake confirmed
-    assert_matches!(
-        server_nodes_manager.is_node_owner(wallet.address()).await,
-        Ok(true)
+    // Node stake confirmed, but rewards weren't generated yet
+    assert!(
+        !server_nodes_manager
+            .is_validator_node_owner(wallet.address())
+            .await?,
+    );
+
+    signed_call(
+        &validator_set_contract,
+        "process",
+        (),
+        None,
+        &node_wallet_secret,
+    )
+    .await?;
+
+    // Node stake confirmed and validator rewards were generated
+    assert!(
+        server_nodes_manager
+            .is_validator_node_owner(wallet.address())
+            .await?,
     );
 
     signed_call(
         &server_nodes_manager_contract,
         "unstake",
-        (ethereum_types::Address::zero(), ethereum_types::U256::one()),
+        (node_wallet.address(), ethereum_types::U256::one()),
         None,
         &wallet_secret,
     )
@@ -149,9 +183,10 @@ async fn test_node_owner() -> Result<(), anyhow::Error> {
     .await?;
 
     // Unstaked, user is no longer a node owner
-    assert_matches!(
-        server_nodes_manager.is_node_owner(wallet.address()).await,
-        Ok(false)
+    assert!(
+        !server_nodes_manager
+            .is_validator_node_owner(wallet.address())
+            .await?
     );
 
     Ok(())

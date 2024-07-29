@@ -1,7 +1,7 @@
 #![cfg(feature = "enable-integration-tests")]
 use assert_matches::assert_matches;
 use chrono::{DateTime, Duration, Utc};
-use ethereum_types::U256;
+use ethereum_types::{Address, U256};
 use jsonrpc_core::Error as RPCError;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -389,6 +389,12 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
     let signer = web3::signing::SecretKeyRef::from(&signer_secret);
     let signing_key = k256::SecretKey::from_slice(&signer_private_key)?;
 
+    // Account #18 private key from Hardhat local node
+    let node_wallet_secret = web3::signing::SecretKey::from_str(
+        "de9be858da4a475276426320d5e9262ecfc3ba460bfac56360bfa6c4c28b4ee0",
+    )?;
+    let node_wallet = web3::signing::SecretKeyRef::from(&node_wallet_secret);
+
     // Account #19 private key from Hardhat local node
     let wallet_secret = web3::signing::SecretKey::from_str(
         "df57089febbacf7ba0bc227dafbffa9fc08a93fdc68e1e42411a14efcf23656e",
@@ -397,7 +403,104 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
 
     // Default http url for Hardhat local node
     let http = web3::transports::Http::new("http://127.0.0.1:8545")?;
+
+    // Set miner address to be able to call `ValidatorSet::process()` method
+    let _ = hardhat_set_coinbase(&http, node_wallet.address()).await?;
+
     let web3_client = web3::Web3::new(http);
+
+    let validator_set_contract = deploy_upgradeable_contract(
+        web3_client.eth(),
+        include_str!("../artifacts/ValidatorSet.json"),
+        (
+            ethereum_types::Address::zero(),
+            ethereum_types::U256::zero(),
+            ethereum_types::U256::from(32),
+        ),
+        &owner_secret,
+    )
+    .await?;
+
+    let lock_keeper_contract = deploy_upgradeable_contract(
+        web3_client.eth(),
+        include_str!("./artifacts/LockKeeper.json"),
+        (),
+        &owner_secret,
+    )
+    .await?;
+
+    let server_nodes_manager_contract = deploy_upgradeable_contract(
+        web3_client.eth(),
+        include_str!("../artifacts/ServerNodes_Manager.json"),
+        (
+            validator_set_contract.address(), // ValidatorSet
+            lock_keeper_contract.address(),   // LockKeeper
+            ethereum_types::Address::zero(),  // RewardsBank
+            ethereum_types::Address::zero(),  // airBond
+            ethereum_types::Address::zero(),  // Treasury
+            U256::zero(),                     // _onboardingDelay
+            U256::zero(),                     // _unstakeLockTime
+            U256::zero(),                     // _minStakeAmount
+        ),
+        &owner_secret,
+    )
+    .await?;
+
+    if !has_role(
+        &validator_set_contract,
+        "STAKING_MANAGER_ROLE",
+        server_nodes_manager_contract.address(),
+    )
+    .await?
+    {
+        grant_role(
+            &validator_set_contract,
+            "STAKING_MANAGER_ROLE",
+            server_nodes_manager_contract.address(),
+            &owner_secret,
+        )
+        .await?;
+    }
+
+    signed_call(
+        &server_nodes_manager_contract,
+        "newStake",
+        (node_wallet.address(), wallet.address()),
+        Some(U256::one()),
+        &wallet_secret,
+    )
+    .await?;
+
+    signed_call(
+        &server_nodes_manager_contract,
+        "onBlock",
+        (),
+        None,
+        &node_wallet_secret,
+    )
+    .await?;
+
+    assert_matches!(
+        validator_set_contract
+            .query::<(U256, Address, bool), _, _, _>(
+                "stakes",
+                node_wallet.address(),
+                None,
+                contract::Options::default(),
+                None,
+            )
+            .await,
+        Ok((staked, _, _)) if staked == U256::one()
+    );
+
+    signed_call(
+        &validator_set_contract,
+        "process",
+        (),
+        None,
+        &node_wallet_secret,
+    )
+    .await?;
 
     let issuer_contract = deploy_contract(
         web3_client.eth(),
@@ -444,6 +547,7 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
     let req = req_signer.build_signed_sno_sbt_request(
         wallet.address(),
         wallet.address(),
+        server_nodes_manager_contract.address(),
         get_latest_block_timestamp(web3_client.eth()).await?,
     )?;
 
@@ -475,6 +579,7 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
     )
     .await
     .unwrap();
+
     // Verify that SNO SBT can't be minted twice
     let err_already_exist = signed_call(
         &issuer_contract,
@@ -488,8 +593,27 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
     assert_matches!(err_already_exist, ApiError(web3::Error::Rpc(RPCError { message, .. })) if message.as_str() == ERR_SBT_ALREADY_EXIST);
 
     // Verify that SNO SBT is minted correctly
-    let issued_at = sbt_verify(&sbt_contract, wallet.address()).await?;
-    assert_ne!(issued_at, DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+    assert_ne!(
+        sbt_verify(&sbt_contract, wallet.address()).await?,
+        DateTime::<Utc>::from_timestamp(0, 0).unwrap()
+    );
+
+    // Set max time since last reward to zero to fail SNO SBT verification
+    signed_call(
+        &sbt_contract,
+        "editMaxTimeSinceLastReward",
+        U256::zero(),
+        None,
+        &owner_secret,
+    )
+    .await
+    .unwrap();
+
+    // Verify that SNO SBT is not valid anymore
+    assert_eq!(
+        sbt_verify(&sbt_contract, wallet.address()).await?,
+        DateTime::<Utc>::from_timestamp(0, 0).unwrap()
+    );
 
     // Try to burn OG SBT
     signed_call(

@@ -91,10 +91,12 @@ impl SbtRequestSigner {
         &self,
         gov_wallet: Address,
         sno_wallet: Address,
+        server_nodes_manager: Address,
         datetime: DateTime<Utc>,
     ) -> Result<SignedSBTRequest, AppError> {
         let req_expires_at = (datetime + self.config.request_lifetime).timestamp() as u64;
-        let encoded_req = encode_sno_sbt_request(gov_wallet, sno_wallet, req_expires_at);
+        let encoded_req =
+            encode_sno_sbt_request(gov_wallet, sno_wallet, server_nodes_manager, req_expires_at);
 
         self.sign_request(encoded_req)
     }

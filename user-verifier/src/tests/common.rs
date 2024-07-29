@@ -1,7 +1,8 @@
 #![cfg(any(test, feature = "enable-integration-tests"))]
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
-use ethereum_types::U256;
+use ethereum_types::{Address, U256};
+use hex::ToHex;
 use serde::Serialize;
 use web3::{
     api::Eth,
@@ -201,6 +202,20 @@ pub async fn revoke_role<T: web3::Transport>(
     let role_id = get_role_id(contract, role_name).await?;
 
     signed_call(contract, "revokeRole", (role_id, wallet_addr), None, caller)
+        .await
+        .map_err(anyhow::Error::from)
+}
+
+pub async fn hardhat_set_coinbase<T: web3::Transport>(
+    http: &T,
+    address: Address,
+) -> anyhow::Result<serde_json::Value> {
+    let (set_coinbase_req_id, set_coinbase_call) = http.prepare(
+        "hardhat_setCoinbase",
+        vec![format!("0x{}", address.encode_hex::<String>()).into()],
+    );
+
+    http.send(set_coinbase_req_id, set_coinbase_call)
         .await
         .map_err(anyhow::Error::from)
 }

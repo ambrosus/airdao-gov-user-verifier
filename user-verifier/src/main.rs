@@ -6,6 +6,7 @@ mod rpc_node_client;
 mod server;
 mod server_nodes_manager;
 mod signer;
+mod validators_manager;
 mod verification;
 
 use shared::logger;

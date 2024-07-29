@@ -45,15 +45,18 @@ pub struct StatusResponse {
 }
 
 impl AppState {
-    pub fn new(config: AppConfig) -> Result<Self, AppError> {
+    pub async fn new(config: AppConfig) -> Result<Self, AppError> {
+        let rpc_node_client = RpcNodeClient::new(config.rpc_node.clone())?;
+
         Ok(Self {
             client: FractalClient::new(config.fractal.clone())?,
             signer: SbtRequestSigner::new(config.signer.clone()),
             explorer_client: ExplorerClient::new(config.explorer.clone())?,
             server_nodes_manager: ServerNodesManager::new(
-                config.server_nodes_manager_address,
-                RpcNodeClient::new(config.rpc_node.clone())?,
-            )?,
+                &config.server_nodes_manager,
+                rpc_node_client.clone(),
+            )
+            .await?,
             config,
         })
     }
@@ -65,7 +68,7 @@ pub async fn start(config: AppConfig) -> Result<(), AppError> {
         .parse::<std::net::SocketAddr>()
         .expect("Can't parse socket address");
 
-    let state = AppState::new(config.clone())?;
+    let state = AppState::new(config.clone()).await?;
 
     let app = Router::new()
         .route("/status", get(status_endpoint))
@@ -183,13 +186,14 @@ async fn verify_node_owner_endpoint(
 
     let result = match state
         .server_nodes_manager
-        .is_node_owner(node_owner_wallet)
+        .is_validator_node_owner(node_owner_wallet)
         .await
     {
         Ok(true) => create_verify_node_owner_response(
             &state.signer,
             req.user.wallet,
             node_owner_wallet,
+            state.server_nodes_manager.contract.address(),
             Utc::now(),
         ),
         Ok(false) => Err(AppError::SNOVerificationNotAllowed),

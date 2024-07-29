@@ -1,23 +1,60 @@
-use std::collections::HashSet;
-
 use ethabi::Address;
+use serde::Deserialize;
+use std::collections::HashSet;
 use web3::{contract, transports::Http};
 
-use crate::rpc_node_client::RpcNodeClient;
+use crate::{rpc_node_client::RpcNodeClient, validators_manager::ValidatorsManager};
+use shared::utils;
 
 #[derive(Clone)]
 pub struct ServerNodesManager {
-    contract: contract::Contract<Http>,
+    pub contract: contract::Contract<Http>,
+    validators_manager: ValidatorsManager,
     request_timeout: std::time::Duration,
 }
 
+#[derive(Clone, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerNodesManagerConfig {
+    pub contract: Address,
+    #[serde(deserialize_with = "utils::de_secs_duration")]
+    pub max_allowed_time_since_last_reward: std::time::Duration,
+}
+
 impl ServerNodesManager {
-    pub fn new(address: Address, client: RpcNodeClient) -> contract::Result<Self> {
+    pub async fn new(
+        config: &ServerNodesManagerConfig,
+        client: RpcNodeClient,
+    ) -> contract::Result<Self> {
         let server_nodes_manager_artifact = include_str!("../artifacts/ServerNodes_Manager.json");
+        let request_timeout = client.config.request_timeout;
+        let snm_contract = client.load_contract(config.contract, server_nodes_manager_artifact)?;
+
+        let validators_manager_address = tokio::time::timeout(
+            request_timeout,
+            snm_contract.query::<ethereum_types::Address, _, _, _>(
+                "validatorSet",
+                (),
+                None,
+                contract::Options::default(),
+                None,
+            ),
+        )
+        .await
+        .map_err(|_| {
+            contract::Error::Api(web3::Error::Io(std::io::ErrorKind::TimedOut.into()))
+        })??;
+
+        let validators_manager = ValidatorsManager::new(
+            validators_manager_address,
+            config.max_allowed_time_since_last_reward,
+            client,
+        )?;
 
         Ok(Self {
-            contract: client.load_contract(address, server_nodes_manager_artifact)?,
-            request_timeout: client.config.request_timeout,
+            contract: snm_contract,
+            validators_manager,
+            request_timeout,
         })
     }
 
@@ -32,7 +69,22 @@ impl ServerNodesManager {
         .map(|paused: bool| !paused)
     }
 
-    pub async fn is_node_owner(&self, wallet: Address) -> contract::Result<bool> {
+    pub async fn is_validator_node_owner(&self, wallet: Address) -> contract::Result<bool> {
+        let owned_nodes = self.get_owned_nodes_by_wallet(wallet).await?;
+
+        for node in owned_nodes {
+            if matches!(
+                self.validators_manager.is_validator_node(node).await,
+                Ok(true)
+            ) {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    async fn get_owned_nodes_by_wallet(&self, wallet: Address) -> contract::Result<Vec<Address>> {
         let nodes = self.get_user_stakes_list(wallet).await?;
         let onboarding_nodes = self
             .get_onboarding_waiting_list()
@@ -40,13 +92,10 @@ impl ServerNodesManager {
             .into_iter()
             .collect::<HashSet<_>>();
 
-        let is_node_operator = nodes
+        Ok(nodes
             .into_iter()
             .filter(|node| !onboarding_nodes.contains(node))
-            .count()
-            > 0;
-
-        Ok(is_node_operator)
+            .collect())
     }
 
     async fn get_user_stakes_list(&self, owner: Address) -> contract::Result<Vec<Address>> {
