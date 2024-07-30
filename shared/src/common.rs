@@ -352,6 +352,7 @@ impl From<&str> for SessionToken {
 #[serde(rename_all = "camelCase")]
 pub struct RawSessionToken {
     /// Session token kind
+    #[serde(flatten)]
     pub kind: SessionTokenKind,
     /// Expiration date for a session JWT token
     pub expires_at: u64,
@@ -365,7 +366,7 @@ pub enum SessionTokenKind {
         #[serde(rename = "wallet")]
         checksum_wallet: String,
     },
-    Internal,
+    Internal {},
 }
 
 impl RawSessionToken {
@@ -430,7 +431,7 @@ impl SessionToken {
 
         match token {
             RawSessionToken {
-                kind: SessionTokenKind::Internal,
+                kind: SessionTokenKind::Internal {},
                 ..
             } => Ok(()),
             _ => Err(anyhow!("Invalid session token kind")),
@@ -700,14 +701,60 @@ impl Serialize for WrappedCid {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use chrono::Utc;
     use ethereum_types::Address;
+    use hex::ToHex;
     use serde_email::Email;
+    use std::time::Duration;
 
-    use super::{UserDbEntry, UserProfile, UserProfileStatus, WrappedCid};
-    use crate::common::{CompletionToken, User};
+    use super::{SessionTokenKind, UserDbEntry, UserProfile, UserProfileStatus, WrappedCid};
+    use crate::common::{CompletionToken, RawSessionToken, User};
+
+    #[test]
+    fn test_session_token() {
+        let now = Utc::now().timestamp_millis() as u64;
+        let wallet = Address::random().encode_hex::<String>();
+        let token = RawSessionToken {
+            kind: SessionTokenKind::Wallet {
+                checksum_wallet: wallet.clone(),
+            },
+            expires_at: now,
+        };
+
+        assert_eq!(
+            serde_json::to_string(&token).unwrap(),
+            format!(r#"{{"wallet":"{wallet}","expiresAt":{now}}}"#)
+        );
+
+        assert_matches::assert_matches!(
+            serde_json::from_str::<RawSessionToken>(
+                r#"{"wallet":"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266","expiresAt":1000}"#
+            )
+            .unwrap(),
+            RawSessionToken {
+                kind: SessionTokenKind::Wallet { checksum_wallet: _ },
+                expires_at: _
+            }
+        );
+
+        let token = RawSessionToken {
+            kind: SessionTokenKind::Internal {},
+            expires_at: now,
+        };
+
+        assert_eq!(
+            serde_json::to_string(&token).unwrap(),
+            format!(r#"{{"expiresAt":{now}}}"#)
+        );
+
+        assert_matches::assert_matches!(
+            serde_json::from_str::<RawSessionToken>(r#"{"expiresAt":1000}"#).unwrap(),
+            RawSessionToken {
+                kind: SessionTokenKind::Internal {},
+                expires_at: _
+            }
+        );
+    }
 
     #[test]
     fn test_de_raw_user_profile() {

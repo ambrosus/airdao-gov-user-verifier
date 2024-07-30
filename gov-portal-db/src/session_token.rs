@@ -54,7 +54,7 @@ impl SessionManager {
     ) -> Result<SessionToken, anyhow::Error> {
         SessionToken::new(
             RawSessionToken {
-                kind: SessionTokenKind::Internal,
+                kind: SessionTokenKind::Internal {},
                 expires_at: (Utc::now() + lifetime).timestamp_millis() as u64,
             },
             self.config.secret.as_bytes(),
