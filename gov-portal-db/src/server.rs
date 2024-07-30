@@ -59,6 +59,11 @@ pub enum TokenQuery {
     NoMessage {},
 }
 
+#[derive(Debug, Serialize)]
+pub struct TokenResponse {
+    pub token: SessionToken,
+}
+
 /// JSON-serialized request passed as POST-data to `/users` endpoint
 #[derive(Debug, Deserialize)]
 pub struct UsersRequest {
@@ -173,14 +178,15 @@ pub async fn start(
 async fn token_route(
     State(state): State<AppState>,
     Json(req): Json<TokenQuery>,
-) -> Result<Json<SessionToken>, String> {
+) -> Result<Json<TokenResponse>, String> {
     tracing::debug!("[/token] Request {req:?}");
 
     let res = match req {
         TokenQuery::Message { data } => state
             .session_manager
             .acquire_token_with_wallet_signed_message(&data)
-            .map_err(|e| e.to_string()),
+            .map_err(|e| e.to_string())
+            .map(|token| TokenResponse { token }),
         TokenQuery::NoMessage {} => Err("Resource Not Found".to_owned()),
     };
 
