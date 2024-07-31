@@ -79,6 +79,24 @@ pub struct SignedQuizResponse {
     pub quiz_token: String,
 }
 
+/// JSON-serialized request passed as POST-data to `/user` endpoint
+#[derive(Debug, Deserialize)]
+pub struct UserRequest {
+    pub token: SessionToken,
+}
+
+/// JSON-serialized request passed as POST-data to `/status` endpoint
+#[derive(Debug, Deserialize)]
+pub struct StatusRequest {
+    pub token: SessionToken,
+}
+
+/// JSON-serialized request passed as POST-data to `/quiz` endpoint
+#[derive(Debug, Deserialize)]
+pub struct QuizRequest {
+    pub token: SessionToken,
+}
+
 /// JSON-serialized request passed as POST-data to `/quiz` endpoint and contains quiz answers
 /// which should be verified and then updates User's profile in MongoDB
 #[derive(Debug, Deserialize)]
@@ -198,11 +216,11 @@ async fn token_route(
 /// Route handler to read User's profile from MongoDB
 async fn status_route(
     State(state): State<AppState>,
-    Json(token): Json<SessionToken>,
+    Json(req): Json<StatusRequest>,
 ) -> Result<Json<()>, String> {
-    tracing::debug!("[/status] Request {token:?}");
+    tracing::debug!("[/status] Request {req:?}");
 
-    let res = match state.session_manager.verify_internal_token(&token) {
+    let res = match state.session_manager.verify_internal_token(&req.token) {
         Ok(_) => state
             .users_manager
             .mongo_client
@@ -222,11 +240,11 @@ async fn status_route(
 /// Route handler to read User's profile from MongoDB
 async fn user_route(
     State(state): State<AppState>,
-    Json(token): Json<SessionToken>,
+    Json(req): Json<UserRequest>,
 ) -> Result<Json<User>, String> {
-    tracing::debug!("[/user] Request {token:?}");
+    tracing::debug!("[/user] Request {req:?}");
 
-    let res = match state.session_manager.verify_token(&token) {
+    let res = match state.session_manager.verify_token(&req.token) {
         Ok(wallet) => state
             .users_manager
             .get_user_by_wallet(wallet)
@@ -271,11 +289,11 @@ async fn users_route(
 /// Route handler to request quiz questions
 async fn quiz_route(
     State(state): State<AppState>,
-    Json(session): Json<SessionToken>,
+    Json(req): Json<QuizRequest>,
 ) -> Result<Json<SignedQuizResponse>, String> {
-    tracing::debug!("[/quiz] Request {:?}", session);
+    tracing::debug!("[/quiz] Request {:?}", req);
 
-    let res = match state.session_manager.verify_token(&session) {
+    let res = match state.session_manager.verify_token(&req.token) {
         Ok(_) => {
             let questions = state.quiz.get_random_quiz_questions();
 
