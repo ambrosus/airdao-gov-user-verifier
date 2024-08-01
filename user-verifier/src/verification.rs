@@ -76,7 +76,7 @@ mod tests {
     use super::*;
     use crate::{
         fractal::{UserId, UserStatus},
-        signer::SignerConfig,
+        signer::{SignerConfig, SignerKeys},
     };
 
     #[test]
@@ -91,11 +91,29 @@ mod tests {
             expires_at: Utc::now(),
         };
         let signer = SbtRequestSigner::new(SignerConfig {
-            signing_key: SigningKey::from_slice(
-                &hex::decode("356e70d642cc8ca8c3c502a5d3b210a1791f46c25fab9f8edde2f20f02e33fe7")
+            keys: SignerKeys {
+                issuer_human_sbt: SigningKey::from_slice(
+                    &hex::decode(
+                        "356e70d642cc8ca8c3c502a5d3b210a1791f46c25fab9f8edde2f20f02e33fe7",
+                    )
                     .unwrap(),
-            )
-            .unwrap(),
+                )
+                .unwrap(),
+                issuer_og_sbt: SigningKey::from_slice(
+                    &hex::decode(
+                        "356e70d642cc8ca8c3c502a5d3b210a1791f46c25fab9f8edde2f20f02e33fe7",
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+                issuer_sno_sbt: SigningKey::from_slice(
+                    &hex::decode(
+                        "356e70d642cc8ca8c3c502a5d3b210a1791f46c25fab9f8edde2f20f02e33fe7",
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+            },
             request_lifetime: Duration::from_secs(180),
             sbt_lifetime: Duration::from_secs(86_400),
             og_eligible_before: Utc::now(),
@@ -104,7 +122,8 @@ mod tests {
         let wallet = shared::utils::get_eth_address(
             signer
                 .config
-                .signing_key
+                .keys
+                .issuer_human_sbt
                 .verifying_key()
                 .to_encoded_point(false)
                 .as_bytes(),

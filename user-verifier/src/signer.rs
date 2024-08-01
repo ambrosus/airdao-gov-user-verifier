@@ -12,14 +12,33 @@ use crate::error::AppError;
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SignerConfig {
-    #[serde(deserialize_with = "utils::de_secp256k1_signing_key")]
-    pub signing_key: SigningKey,
+    pub keys: SignerKeys,
     #[serde(deserialize_with = "utils::de_secs_duration")]
     pub request_lifetime: Duration,
     #[serde(deserialize_with = "utils::de_secs_duration")]
     pub sbt_lifetime: Duration,
     #[serde(deserialize_with = "utils::de_secs_timestamp_i64")]
     pub og_eligible_before: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SignerKeys {
+    #[serde(
+        rename = "issuerHumanSBT",
+        deserialize_with = "utils::de_secp256k1_signing_key"
+    )]
+    pub issuer_human_sbt: SigningKey,
+    #[serde(
+        rename = "issuerOGSBT",
+        deserialize_with = "utils::de_secp256k1_signing_key"
+    )]
+    pub issuer_og_sbt: SigningKey,
+    #[serde(
+        rename = "issuerSNOSBT",
+        deserialize_with = "utils::de_secp256k1_signing_key"
+    )]
+    pub issuer_sno_sbt: SigningKey,
 }
 
 #[derive(Clone, Debug)]
@@ -36,16 +55,30 @@ pub struct SignedSBTRequest {
     pub s: String,
 }
 
+pub enum SBTKind {
+    Human,
+    OG,
+    ServerNodeOperator,
+}
+
 impl SbtRequestSigner {
     pub fn new(config: SignerConfig) -> Self {
         Self { config }
     }
 
-    fn sign_request(&self, encoded_req: Vec<u8>) -> Result<SignedSBTRequest, AppError> {
-        let (sign, recovery_id) = self
-            .config
-            .signing_key
-            .sign_digest_recoverable(Keccak256::new_with_prefix(&encoded_req))?;
+    fn sign_request(
+        &self,
+        sbt_kind: SBTKind,
+        encoded_req: Vec<u8>,
+    ) -> Result<SignedSBTRequest, AppError> {
+        let signing_key = match sbt_kind {
+            SBTKind::Human => &self.config.keys.issuer_human_sbt,
+            SBTKind::OG => &self.config.keys.issuer_og_sbt,
+            SBTKind::ServerNodeOperator => &self.config.keys.issuer_sno_sbt,
+        };
+
+        let (sign, recovery_id) =
+            signing_key.sign_digest_recoverable(Keccak256::new_with_prefix(&encoded_req))?;
 
         let (r, s) = sign.split_bytes();
 
@@ -69,7 +102,7 @@ impl SbtRequestSigner {
         let sbt_expires_at = (datetime + self.config.sbt_lifetime).timestamp() as u64;
         let encoded_req = encode_sbt_request(wallet, user_id, req_expires_at, sbt_expires_at);
 
-        self.sign_request(encoded_req)
+        self.sign_request(SBTKind::Human, encoded_req)
     }
 
     /// Creates OG SBT request and signs encoded data
@@ -83,7 +116,7 @@ impl SbtRequestSigner {
         let req_expires_at = (datetime + self.config.request_lifetime).timestamp() as u64;
         let encoded_req = encode_og_sbt_request(gov_wallet, og_wallet, tx_hash, req_expires_at);
 
-        self.sign_request(encoded_req)
+        self.sign_request(SBTKind::OG, encoded_req)
     }
 
     /// Creates SNO SBT request and signs encoded data
@@ -98,7 +131,7 @@ impl SbtRequestSigner {
         let encoded_req =
             encode_sno_sbt_request(gov_wallet, sno_wallet, server_nodes_manager, req_expires_at);
 
-        self.sign_request(encoded_req)
+        self.sign_request(SBTKind::ServerNodeOperator, encoded_req)
     }
 }
 
@@ -117,11 +150,29 @@ mod tests {
             .unwrap()
             .as_u128();
         let config = SignerConfig {
-            signing_key: SigningKey::from_slice(
-                &hex::decode("356e70d642cc8ca8c3c502a5d3b210a1791f46c25fab9f8edde2f20f02e33fe7")
+            keys: SignerKeys {
+                issuer_human_sbt: SigningKey::from_slice(
+                    &hex::decode(
+                        "356e70d642cc8ca8c3c502a5d3b210a1791f46c25fab9f8edde2f20f02e33fe7",
+                    )
                     .unwrap(),
-            )
-            .unwrap(), //SigningKey::random(&mut rand::rngs::OsRng),
+                )
+                .unwrap(), //SigningKey::random(&mut rand::rngs::OsRng),
+                issuer_og_sbt: SigningKey::from_slice(
+                    &hex::decode(
+                        "356e70d642cc8ca8c3c502a5d3b210a1791f46c25fab9f8edde2f20f02e33fe7",
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+                issuer_sno_sbt: SigningKey::from_slice(
+                    &hex::decode(
+                        "356e70d642cc8ca8c3c502a5d3b210a1791f46c25fab9f8edde2f20f02e33fe7",
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+            },
             request_lifetime: Duration::from_secs(180),
             sbt_lifetime: Duration::from_secs(86_400),
             og_eligible_before: Utc::now(),
@@ -129,7 +180,8 @@ mod tests {
 
         let wallet = shared::utils::get_eth_address(
             config
-                .signing_key
+                .keys
+                .issuer_human_sbt
                 .verifying_key()
                 .to_encoded_point(false)
                 .as_bytes(),
@@ -151,7 +203,8 @@ mod tests {
 
         // Verify signature
         config
-            .signing_key
+            .keys
+            .issuer_human_sbt
             .verifying_key()
             .verify_digest(
                 Keccak256::new_with_prefix(hex::decode(&req.data).unwrap()),

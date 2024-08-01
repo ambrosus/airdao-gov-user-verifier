@@ -28,8 +28,11 @@ Default configuration could be found in `./config/default.json` file.
 
 - `listenAddress`: host:port to run the verifier service at. Defaults to `localhost:10000`
 - `signer`: signer configuration
-    - `signingKey`: hex encoded private key to sign Human SBT requests to be used as arguments for Human SBT issuer smart contract call `sbtMint`. Should be set before app start
-    - `requestLifetime`: lifetime duration in millis for which the signed request will be valid to use for Human SBT issuer smart contract call `sbtMint`. Defaults to 60 seconds
+    - `keys`: 
+        - `issuerHumanSBT`: hex encoded private key to sign Human SBT requests to be used as arguments for Human SBT issuer smart contract call `sbtMint`. Should be set before app start
+        - `issuerOGSBT`: hex encoded private key to sign Human SBT requests to be used as arguments for OG SBT issuer smart contract call `sbtMint`. Should be set before app start
+        - `issuerSNOSBT`: hex encoded private key to sign Human SBT requests to be used as arguments for SNO SBT issuer smart contract call `sbtMint`. Should be set before app start
+    - `requestLifetime`: lifetime duration in millis for which the signed request will be valid to use for SBT issuer smart contract call `sbtMint`. Defaults to 60 seconds
     - `sbtLifetime`: lifetime duration in millis for Human SBT since minted for a user. Defaults to 100 years
 - `fractal`: Fractal Id configuration
     - `requestTokenUrl`: url used to exchange auth code for auth token. Could be found in Fractal Id documentation. Defaults to production env

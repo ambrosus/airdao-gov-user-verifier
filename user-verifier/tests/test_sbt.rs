@@ -16,6 +16,16 @@ use airdao_gov_user_verifier::{signer, tests::*};
 const ERR_SBT_EXPIRED_OR_NOT_EXIST: &str = "Error: VM Exception while processing transaction: reverted with reason string 'SBT expired or not exist'";
 const ERR_SBT_ALREADY_EXIST: &str = "Error: VM Exception while processing transaction: reverted with reason string 'This kind of SBT already exist'";
 
+// Account #1 private key from Hardhat local node
+const HUMAN_SBT_SIGNER_PRIVATE_KEY: &str =
+    "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+// Account #2 private key from Hardhat local node
+const OG_SBT_SIGNER_PRIVATE_KEY: &str =
+    "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
+// Account #3 private key from Hardhat local node
+const SNO_SBT_SIGNER_PRIVATE_KEY: &str =
+    "7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6";
+
 #[tokio::test]
 async fn test_roles() -> Result<(), anyhow::Error> {
     // Account #0 private key from Hardhat local node
@@ -23,9 +33,7 @@ async fn test_roles() -> Result<(), anyhow::Error> {
         "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
     )?;
 
-    // Account #1 private key from Hardhat local node
-    let signer_private_key =
-        hex::decode("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")?;
+    let signer_private_key = hex::decode(HUMAN_SBT_SIGNER_PRIVATE_KEY)?;
     let signer_secret = web3::signing::SecretKey::from_slice(&signer_private_key)?;
     let signer = web3::signing::SecretKeyRef::from(&signer_secret);
 
@@ -93,12 +101,9 @@ async fn test_human_sbt() -> Result<(), anyhow::Error> {
         "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
     )?;
 
-    // Account #1 private key from Hardhat local node
-    let signer_private_key =
-        hex::decode("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")?;
-    let signer_secret = web3::signing::SecretKey::from_slice(&signer_private_key)?;
+    let signer_secret =
+        web3::signing::SecretKey::from_slice(&hex::decode(HUMAN_SBT_SIGNER_PRIVATE_KEY)?)?;
     let signer = web3::signing::SecretKeyRef::from(&signer_secret);
-    let signing_key = k256::SecretKey::from_slice(&signer_private_key)?;
 
     // Account #19 private key from Hardhat local node
     let wallet_secret = web3::signing::SecretKey::from_str(
@@ -145,7 +150,16 @@ async fn test_human_sbt() -> Result<(), anyhow::Error> {
     assert!(has_role(&sbt_contract, "ISSUER_ROLE", issuer_contract.address()).await?);
 
     let signer_config = signer::SignerConfig {
-        signing_key: signing_key.into(),
+        keys: signer::SignerKeys {
+            issuer_human_sbt: k256::SecretKey::from_slice(&hex::decode(
+                HUMAN_SBT_SIGNER_PRIVATE_KEY,
+            )?)?
+            .into(),
+            issuer_og_sbt: k256::SecretKey::from_slice(&hex::decode(OG_SBT_SIGNER_PRIVATE_KEY)?)?
+                .into(),
+            issuer_sno_sbt: k256::SecretKey::from_slice(&hex::decode(SNO_SBT_SIGNER_PRIVATE_KEY)?)?
+                .into(),
+        },
         request_lifetime: std::time::Duration::from_secs(60),
         sbt_lifetime: std::time::Duration::from_secs(3153600000),
         og_eligible_before: get_latest_block_timestamp(web3_client.eth()).await?,
@@ -230,12 +244,9 @@ async fn test_og_sbt() -> Result<(), anyhow::Error> {
         "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
     )?;
 
-    // Account #1 private key from Hardhat local node
-    let signer_private_key =
-        hex::decode("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")?;
-    let signer_secret = web3::signing::SecretKey::from_slice(&signer_private_key)?;
+    let signer_secret =
+        web3::signing::SecretKey::from_slice(&hex::decode(OG_SBT_SIGNER_PRIVATE_KEY)?)?;
     let signer = web3::signing::SecretKeyRef::from(&signer_secret);
-    let signing_key = k256::SecretKey::from_slice(&signer_private_key)?;
 
     // Account #19 private key from Hardhat local node
     let wallet_secret = web3::signing::SecretKey::from_str(
@@ -299,7 +310,16 @@ async fn test_og_sbt() -> Result<(), anyhow::Error> {
     assert!(has_role(&sbt_contract, "ISSUER_ROLE", issuer_contract.address()).await?);
 
     let signer_config = signer::SignerConfig {
-        signing_key: signing_key.into(),
+        keys: signer::SignerKeys {
+            issuer_human_sbt: k256::SecretKey::from_slice(&hex::decode(
+                HUMAN_SBT_SIGNER_PRIVATE_KEY,
+            )?)?
+            .into(),
+            issuer_og_sbt: k256::SecretKey::from_slice(&hex::decode(OG_SBT_SIGNER_PRIVATE_KEY)?)?
+                .into(),
+            issuer_sno_sbt: k256::SecretKey::from_slice(&hex::decode(SNO_SBT_SIGNER_PRIVATE_KEY)?)?
+                .into(),
+        },
         request_lifetime: std::time::Duration::from_secs(60),
         sbt_lifetime: std::time::Duration::from_secs(3153600000),
         og_eligible_before: get_latest_block_timestamp(web3_client.eth()).await?,
@@ -382,12 +402,9 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
         "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
     )?;
 
-    // Account #1 private key from Hardhat local node
-    let signer_private_key =
-        hex::decode("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")?;
-    let signer_secret = web3::signing::SecretKey::from_slice(&signer_private_key)?;
+    let signer_secret =
+        web3::signing::SecretKey::from_slice(&hex::decode(SNO_SBT_SIGNER_PRIVATE_KEY)?)?;
     let signer = web3::signing::SecretKeyRef::from(&signer_secret);
-    let signing_key = k256::SecretKey::from_slice(&signer_private_key)?;
 
     // Account #18 private key from Hardhat local node
     let node_wallet_secret = web3::signing::SecretKey::from_str(
@@ -537,7 +554,16 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
     assert!(has_role(&sbt_contract, "ISSUER_ROLE", issuer_contract.address()).await?);
 
     let signer_config = signer::SignerConfig {
-        signing_key: signing_key.into(),
+        keys: signer::SignerKeys {
+            issuer_human_sbt: k256::SecretKey::from_slice(&hex::decode(
+                HUMAN_SBT_SIGNER_PRIVATE_KEY,
+            )?)?
+            .into(),
+            issuer_og_sbt: k256::SecretKey::from_slice(&hex::decode(OG_SBT_SIGNER_PRIVATE_KEY)?)?
+                .into(),
+            issuer_sno_sbt: k256::SecretKey::from_slice(&hex::decode(SNO_SBT_SIGNER_PRIVATE_KEY)?)?
+                .into(),
+        },
         request_lifetime: std::time::Duration::from_secs(60),
         sbt_lifetime: std::time::Duration::from_secs(3153600000),
         og_eligible_before: get_latest_block_timestamp(web3_client.eth()).await?,

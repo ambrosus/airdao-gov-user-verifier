@@ -2,7 +2,11 @@
     "listenAddress": "0.0.0.0:10000",
     "usersManagerSecret": null,
     "signer": {
-        "signingKey": null,
+        "keys": {
+            "issuerHumanSBT": null,
+            "issuerOGSBT": null,
+            "issuerSNOSBT": null
+        },
         "requestLifetime": 60000,
         "sbtLifetime": 3153600000000,
         "ogEligibleBefore": 1577836800
