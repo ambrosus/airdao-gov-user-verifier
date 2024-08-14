@@ -234,9 +234,9 @@ impl UsersManager {
         limit: Option<u64>,
     ) -> Result<Vec<User>, error::Error> {
         let start = start.unwrap_or_default();
-        let limit = std::cmp::min(
+        let limit = std::cmp::max(
             1,
-            std::cmp::max(
+            std::cmp::min(
                 limit.unwrap_or(DEFAULT_GET_USERS_LIMIT),
                 MAX_GET_USERS_LIMIT,
             ),
