@@ -6,6 +6,7 @@ on:
       - main
       - og-token-support
       - server-node-operator-sbt
+      - add-sbt-report
 
 jobs:
   build_and_publish_db:
