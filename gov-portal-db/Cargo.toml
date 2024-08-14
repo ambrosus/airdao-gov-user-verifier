@@ -16,7 +16,7 @@ futures-util = { workspace = true }
 # Ethereum
 ethabi = { workspace = true }
 ethereum-types = { workspace = true }
-web3 = { workspace = true, optional = true }
+web3 = { workspace = true }
 
 # Crypto
 k256 = { workspace = true }
@@ -35,6 +35,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde-email = { workspace = true }
 bson = { workspace = true }
+serde-enum-str = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
@@ -61,4 +62,4 @@ clap = { workspace = true }
 assert_matches = { workspace = true }
 
 [features]
-enable-integration-tests = ["web3"]
+enable-integration-tests = []

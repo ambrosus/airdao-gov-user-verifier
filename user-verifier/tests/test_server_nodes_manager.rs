@@ -3,10 +3,10 @@ use std::str::FromStr;
 use web3::signing::Key;
 
 use airdao_gov_user_verifier::{
-    rpc_node_client::{RpcNodeClient, RpcNodeConfig},
     server_nodes_manager::{ServerNodesManager, ServerNodesManagerConfig},
     tests::*,
 };
+use shared::rpc_node_client::{RpcNodeClient, RpcNodeConfig};
 
 // const ERR_NODE_ALREADY_REGISTERED: &str = "Error: VM Exception while processing transaction: reverted with reason string 'node already registered'";
 

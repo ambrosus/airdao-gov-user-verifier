@@ -24,6 +24,8 @@ use shared::{
 use mongo_client::{MongoClient, MongoConfig};
 
 const MONGO_DUPLICATION_ERROR: i32 = 11000;
+const MAX_GET_USERS_LIMIT: u64 = 1000;
+const DEFAULT_GET_USERS_LIMIT: u64 = 100;
 
 /// Users manager's [`UsersManager`] settings
 #[derive(Deserialize, Debug, Clone)]
@@ -222,6 +224,60 @@ impl UsersManager {
                 )
                 .map_err(error::Error::from)
             }
+        })
+    }
+
+    /// Searches for multiple user profiles within MongoDB by provided EVM-like address [`Address`] list and returns [`Vec<UserProfile>`]
+    pub async fn get_users(
+        &self,
+        start: Option<u64>,
+        limit: Option<u64>,
+    ) -> Result<Vec<User>, error::Error> {
+        let start = start.unwrap_or_default();
+        let limit = std::cmp::min(
+            1,
+            std::cmp::max(
+                limit.unwrap_or(DEFAULT_GET_USERS_LIMIT),
+                MAX_GET_USERS_LIMIT,
+            ),
+        ) as i64;
+
+        let find_options = FindOptions::builder()
+            .max_time(self.mongo_client.req_timeout)
+            .skip(start)
+            .limit(limit)
+            .build();
+
+        let res = tokio::time::timeout(self.mongo_client.req_timeout, async {
+            let mut stream = self.mongo_client.find(doc! {}, find_options).await?;
+            let mut profiles = Vec::with_capacity(limit as usize);
+            while let Ok(Some(doc)) = stream.try_next().await {
+                let profile =
+                    bson::from_document::<UserDbEntry>(doc).map_err(error::Error::from)?;
+                profiles.push(profile);
+            }
+            Ok(profiles)
+        })
+        .await?;
+
+        tracing::debug!("Get users (from: {start} limit: {limit}) result: {res:?}");
+
+        res.and_then(|entries| {
+            entries
+                .into_iter()
+                .map(|db_entry| {
+                    if db_entry.profile.is_none() {
+                        Err(error::Error::UserNotFound)
+                    } else {
+                        User::new(
+                            db_entry,
+                            Utc::now() + self.config.lifetime,
+                            self.config.secret.as_bytes(),
+                        )
+                        .map_err(error::Error::from)
+                    }
+                })
+                .collect::<Result<_, _>>()
         })
     }
 

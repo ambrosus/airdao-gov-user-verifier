@@ -9,9 +9,12 @@ use serde::Serialize;
 use std::str::FromStr;
 use tower_http::cors::CorsLayer;
 
-use shared::common::{
-    User, UserProfileStatus, VerifyFractalUserRequest, VerifyResponse, VerifyWalletRequest,
-    WalletSignedMessage,
+use shared::{
+    common::{
+        User, UserProfileStatus, VerifyFractalUserRequest, VerifyResponse, VerifyWalletRequest,
+        WalletSignedMessage,
+    },
+    rpc_node_client::RpcNodeClient,
 };
 
 use crate::{
@@ -19,9 +22,8 @@ use crate::{
     error::AppError,
     explorer_client::ExplorerClient,
     fractal::FractalClient,
-    rpc_node_client::RpcNodeClient,
     server_nodes_manager::ServerNodesManager,
-    signer::SbtRequestSigner,
+    signer::SBTRequestSigner,
     verification::{
         create_verify_account_response, create_verify_node_owner_response,
         create_verify_og_response,
@@ -32,7 +34,7 @@ use crate::{
 pub struct AppState {
     pub config: AppConfig,
     pub client: FractalClient,
-    pub signer: SbtRequestSigner,
+    pub signer: SBTRequestSigner,
     pub explorer_client: ExplorerClient,
     pub server_nodes_manager: ServerNodesManager,
 }
@@ -50,7 +52,7 @@ impl AppState {
 
         Ok(Self {
             client: FractalClient::new(config.fractal.clone())?,
-            signer: SbtRequestSigner::new(config.signer.clone()),
+            signer: SBTRequestSigner::new(config.signer.clone()),
             explorer_client: ExplorerClient::new(config.explorer.clone())?,
             server_nodes_manager: ServerNodesManager::new(
                 &config.server_nodes_manager,

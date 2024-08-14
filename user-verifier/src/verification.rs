@@ -7,11 +7,11 @@ use shared::common::{ApprovedResponse, PendingResponse, VerifyResponse};
 use crate::{
     error::AppError,
     fractal::{VerificationStatus, VerifiedUser},
-    signer::SbtRequestSigner,
+    signer::SBTRequestSigner,
 };
 
 pub fn create_verify_account_response(
-    signer: &SbtRequestSigner,
+    signer: &SBTRequestSigner,
     wallet: Address,
     user: VerifiedUser,
     datetime: DateTime<Utc>,
@@ -33,7 +33,7 @@ pub fn create_verify_account_response(
 }
 
 pub fn create_verify_og_response(
-    signer: &SbtRequestSigner,
+    signer: &SBTRequestSigner,
     gov_wallet: Address,
     og_wallet: Address,
     tx_hash: Hash,
@@ -47,7 +47,7 @@ pub fn create_verify_og_response(
 }
 
 pub fn create_verify_node_owner_response(
-    signer: &SbtRequestSigner,
+    signer: &SBTRequestSigner,
     gov_wallet: Address,
     sno_wallet: Address,
     server_nodes_manager: Address,
@@ -90,7 +90,7 @@ mod tests {
             refresh_token: "some_refresh_token".to_owned(),
             expires_at: Utc::now(),
         };
-        let signer = SbtRequestSigner::new(SignerConfig {
+        let signer = SBTRequestSigner::new(SignerConfig {
             keys: SignerKeys {
                 issuer_human_sbt: SigningKey::from_slice(
                     &hex::decode(

@@ -1,6 +1,7 @@
 use serde::Deserialize;
-use shared::utils;
 use web3::{contract, transports::http::Http, Web3};
+
+use crate::utils;
 
 #[derive(Clone)]
 pub struct RpcNodeClient {

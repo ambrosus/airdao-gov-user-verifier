@@ -3,8 +3,8 @@ use serde::Deserialize;
 use std::collections::HashSet;
 use web3::{contract, transports::Http};
 
-use crate::{rpc_node_client::RpcNodeClient, validators_manager::ValidatorsManager};
-use shared::utils;
+use crate::validators_manager::ValidatorsManager;
+use shared::{rpc_node_client::RpcNodeClient, utils};
 
 #[derive(Clone)]
 pub struct ServerNodesManager {

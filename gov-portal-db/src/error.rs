@@ -13,12 +13,16 @@ pub enum AppError {
     ServerError(#[from] std::io::Error),
     #[error("{0}")]
     InvalidInput(#[from] users_manager::error::Error),
+    #[error("Web3 error: {0}")]
+    Web3(#[from] web3::Error),
+    #[error("Web3 contract error: {0}")]
+    Contract(#[from] web3::contract::Error),
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let (status, err_msg) = match self {
-            Self::ParseError(_) | Self::ServerError(_) => (
+            Self::ParseError(_) | Self::ServerError(_) | Self::Web3(_) | Self::Contract(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_owned(),
             ),

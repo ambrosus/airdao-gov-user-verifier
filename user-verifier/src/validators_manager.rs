@@ -3,7 +3,7 @@ use ethabi::{Address, Uint};
 use std::time::Duration;
 use web3::{contract, transports::Http};
 
-use crate::rpc_node_client::RpcNodeClient;
+use shared::rpc_node_client::RpcNodeClient;
 
 #[derive(Clone)]
 pub struct ValidatorsManager {

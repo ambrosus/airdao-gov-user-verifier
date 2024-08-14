@@ -1,9 +1,10 @@
 use serde::Deserialize;
 
 use crate::{
-    explorer_client::ExplorerConfig, fractal::FractalConfig, rpc_node_client::RpcNodeConfig,
+    explorer_client::ExplorerConfig, fractal::FractalConfig,
     server_nodes_manager::ServerNodesManagerConfig, signer::SignerConfig,
 };
+use shared::rpc_node_client::RpcNodeConfig;
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]

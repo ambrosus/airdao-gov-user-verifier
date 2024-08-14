@@ -165,7 +165,7 @@ async fn test_human_sbt() -> Result<(), anyhow::Error> {
         og_eligible_before: get_latest_block_timestamp(web3_client.eth()).await?,
     };
 
-    let req_signer = signer::SbtRequestSigner::new(signer_config);
+    let req_signer = signer::SBTRequestSigner::new(signer_config);
     let user_id = uuid::Uuid::from_str("01020304-0506-1122-8877-665544332211")?.as_u128();
     let req = req_signer.build_signed_sbt_request(
         wallet.address(),
@@ -325,7 +325,7 @@ async fn test_og_sbt() -> Result<(), anyhow::Error> {
         og_eligible_before: get_latest_block_timestamp(web3_client.eth()).await?,
     };
 
-    let req_signer = signer::SbtRequestSigner::new(signer_config);
+    let req_signer = signer::SBTRequestSigner::new(signer_config);
     let req = req_signer.build_signed_og_sbt_request(
         wallet.address(),
         wallet.address(),
@@ -594,7 +594,7 @@ async fn test_sno_sbt() -> Result<(), anyhow::Error> {
         og_eligible_before: get_latest_block_timestamp(web3_client.eth()).await?,
     };
 
-    let req_signer = signer::SbtRequestSigner::new(signer_config);
+    let req_signer = signer::SBTRequestSigner::new(signer_config);
 
     // Try to mint SNO SBT
     mint_sno_sbt(
@@ -757,9 +757,10 @@ pub async fn sbt_verify<T: web3::Transport>(
         .ok_or_else(|| contract::Error::InvalidOutputType("Not a valid timestamp".to_owned()))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn mint_sno_sbt<'a, T: web3::Transport>(
     web3_client: &'a web3::Web3<T>,
-    req_signer: &'a signer::SbtRequestSigner,
+    req_signer: &'a signer::SBTRequestSigner,
     wallet: &'a SecretKeyRef<'a>,
     wallet_secret: &'a SecretKey,
     sno_wallet: &'a SecretKeyRef<'a>,
@@ -788,7 +789,7 @@ pub async fn mint_sno_sbt<'a, T: web3::Transport>(
 
     // Try to mint SNO SBT
     signed_call(
-        &issuer_contract,
+        issuer_contract,
         "sbtMint",
         (
             sbt_contract.address(),
@@ -798,7 +799,7 @@ pub async fn mint_sno_sbt<'a, T: web3::Transport>(
             sig_s,
         ),
         None,
-        &wallet_secret,
+        wallet_secret,
     )
     .await?;
 

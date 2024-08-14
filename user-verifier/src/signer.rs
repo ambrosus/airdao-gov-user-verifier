@@ -42,7 +42,7 @@ pub struct SignerKeys {
 }
 
 #[derive(Clone, Debug)]
-pub struct SbtRequestSigner {
+pub struct SBTRequestSigner {
     pub config: SignerConfig,
 }
 
@@ -61,7 +61,7 @@ pub enum SBTKind {
     ServerNodeOperator,
 }
 
-impl SbtRequestSigner {
+impl SBTRequestSigner {
     pub fn new(config: SignerConfig) -> Self {
         Self { config }
     }
@@ -187,7 +187,7 @@ mod tests {
                 .as_bytes(),
         );
 
-        let signer = SbtRequestSigner::new(config.clone());
+        let signer = SBTRequestSigner::new(config.clone());
         let req = signer
             .build_signed_sbt_request(wallet, user_id, Utc::now())
             .unwrap();
