@@ -5,6 +5,7 @@ members = [
     "gov-portal-db",
     "shared",
     "mailer",
+    "profiles-fetcher",
 ]
 resolver = "2"
 
