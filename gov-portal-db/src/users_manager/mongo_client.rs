@@ -152,7 +152,15 @@ async fn initialize_collection(
                     .keys(bson::doc! {
                         "email": 1,
                     })
-                    .options(Some(IndexOptions::builder().unique(true).build()))
+                    .options(Some(
+                        IndexOptions::builder()
+                            .unique(true)
+                            .sparse(true)
+                            // .partial_filter_expression(bson::doc! {
+                            //     "type": "string"
+                            // })
+                            .build(),
+                    ))
                     .build(),
             )
             .await?;

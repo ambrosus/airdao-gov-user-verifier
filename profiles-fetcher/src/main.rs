@@ -71,10 +71,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         users = all_users.users;
     }
 
-    for batch_start in (start..).step_by(BATCH_SIZE).into_iter() {
+    for batch_start in (start..).step_by(BATCH_SIZE) {
         let mut requests = (batch_start..batch_start + BATCH_SIZE)
             .step_by(REQUEST_LIMIT)
-            .into_iter()
             .collect::<Vec<_>>();
 
         info!(start = ?batch_start, limit = ?REQUEST_LIMIT, "Waiting for a batch");

@@ -83,6 +83,26 @@ where
     u64::deserialize(deserializer).map(Duration::from_secs)
 }
 
+/// Custom serializer/deserializer for [`DateTime`]
+pub mod datetime_secs_i64 {
+    use chrono::{DateTime, Utc};
+    use serde::{Deserializer, Serializer};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        super::de_secs_timestamp_i64(deserializer)
+    }
+
+    pub fn serialize<S>(ts: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_i64(ts.timestamp())
+    }
+}
+
 /// Deserialize seconds timestamp into [`chrono::DateTime`]
 pub fn de_secs_timestamp_i64<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
 where

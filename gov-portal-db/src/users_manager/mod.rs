@@ -15,8 +15,8 @@ use tokio::time::Duration;
 
 use shared::{
     common::{
-        EmailFrom, SendEmailRequest, User, UserDbEntry, UserEmailConfirmationToken,
-        UserEmailUpdateRequest, UserProfile,
+        EmailFrom, SBTDbEntry, SBTInfo, SendEmailRequest, User, UserDbEntry,
+        UserEmailConfirmationToken, UserEmailUpdateRequest, UserProfile,
     },
     utils,
 };
@@ -173,6 +173,8 @@ impl UsersManager {
         })
         .await?;
 
+        println!("--- {upsert_result:?}");
+
         match upsert_result {
             // Register new user or update email
             Ok(UpdateResult {
@@ -186,6 +188,37 @@ impl UsersManager {
             Err(MongoError { kind, .. }) if is_key_duplication_error(&kind) => {
                 Err(error::Error::UserAlreadyExist)
             }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Registers new user by writing verified [`UserDbEntry`] struct to MongoDB, which will be uniquely indexed by
+    /// EVM-like wallet address [`Address`] and user email [`serde_email::Email`].
+    pub async fn upsert_user_sbt(&self, wallet: Address, sbt: SBTInfo) -> Result<(), error::Error> {
+        let query = doc! {
+            "wallet": bson::to_bson(&wallet)?,
+        };
+
+        let (sbt_address, sbt_entry) = <(Address, SBTDbEntry)>::from(sbt);
+        let upsert_doc = doc! {
+            "wallet": bson::to_bson(&wallet)?,
+            format!("sbts.0x{}", hex::encode(sbt_address)): bson::to_bson(&sbt_entry)?,
+        };
+
+        let update = doc! {
+            "$set": upsert_doc
+        };
+
+        let options = UpdateOptions::builder().upsert(true).build();
+
+        let upsert_result = tokio::time::timeout(self.mongo_client.req_timeout, async {
+            self.mongo_client.update_one(query, update, options).await
+        })
+        .await?;
+
+        match upsert_result {
+            // Upserts an SBT entry for a wallet
+            Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }
     }
@@ -227,6 +260,49 @@ impl UsersManager {
         })
     }
 
+    /// Searches for a user SBT list within MongoDB by provided EVM-like address [`Address`] and returns [`Vec<SBTInfo>`]
+    pub async fn get_user_sbt_list_by_wallet(
+        &self,
+        wallet: Address,
+    ) -> Result<Vec<SBTInfo>, error::Error> {
+        let filter = doc! {
+            "wallet": bson::to_bson(&wallet)?,
+        };
+
+        let find_options = FindOptions::builder()
+            .max_time(self.mongo_client.req_timeout)
+            .build();
+
+        let res = tokio::time::timeout(self.mongo_client.req_timeout, async {
+            self.mongo_client
+                .find(filter, find_options)
+                .await?
+                .try_next()
+                .await
+        })
+        .await??
+        .ok_or(error::Error::UserNotFound)
+        .and_then(|doc| bson::from_document::<UserDbEntry>(doc).map_err(error::Error::from));
+
+        tracing::debug!(
+            "Get user SBT list by wallet ({}) result: {res:?}",
+            hex::encode(wallet.as_bytes())
+        );
+
+        res.and_then(|db_entry| {
+            if db_entry.profile.is_none() {
+                Err(error::Error::UserNotFound)
+            } else {
+                Ok(db_entry
+                    .sbts
+                    .into_iter()
+                    //.filter_map(|entry| SBTInfo::try_from(entry).ok())
+                    .map(SBTInfo::from)
+                    .collect::<Vec<_>>())
+            }
+        })
+    }
+
     /// Searches for multiple user profiles within MongoDB by provided EVM-like address [`Address`] list and returns [`Vec<UserProfile>`]
     pub async fn get_users(
         &self,
@@ -234,13 +310,9 @@ impl UsersManager {
         limit: Option<u64>,
     ) -> Result<Vec<User>, error::Error> {
         let start = start.unwrap_or_default();
-        let limit = std::cmp::max(
-            1,
-            std::cmp::min(
-                limit.unwrap_or(DEFAULT_GET_USERS_LIMIT),
-                MAX_GET_USERS_LIMIT,
-            ),
-        ) as i64;
+        let limit = limit
+            .unwrap_or(DEFAULT_GET_USERS_LIMIT)
+            .clamp(1, MAX_GET_USERS_LIMIT) as i64;
 
         let find_options = FindOptions::builder()
             .max_time(self.mongo_client.req_timeout)
@@ -399,6 +471,7 @@ impl UsersManager {
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: None,
+                        sbts: Default::default(),
                     })?
                 }
             }
@@ -409,6 +482,7 @@ impl UsersManager {
                         quiz_solved: Some(false),
                         blocked_until: Some(block_until.timestamp_millis() as u64),
                         profile: None,
+                        sbts: Default::default(),
                     })?
                 }
             }

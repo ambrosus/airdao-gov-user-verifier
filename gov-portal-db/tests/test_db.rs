@@ -5,7 +5,8 @@ use airdao_gov_portal_db::{
     users_manager::{EmailVerificationConfig, *},
 };
 use assert_matches::assert_matches;
-use shared::common::{EmailFrom, User, UserProfile, UserProfileStatus, WrappedCid};
+use chrono::{SubsecRound, Utc};
+use shared::common::{EmailFrom, SBTInfo, User, UserProfile, UserProfileStatus, WrappedCid};
 use web3::types::Address;
 
 #[tokio::test]
@@ -223,6 +224,208 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
             Some("test3@test.com".parse().unwrap()),
             Some("test8@test.com".parse().unwrap()),
             Some("test9@test.com".parse().unwrap())
+        ]
+    );
+
+    users_manager.mongo_client.collection.drop().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_upsert_user_sbt() -> Result<(), anyhow::Error> {
+    let mongo_config = mongo_client::MongoConfig {
+        url: Some("mongodb://localhost:27017".to_owned()),
+        db: "AirDAOGovPortal_IntegrationTest".to_owned(),
+        collection: "Users".to_owned(),
+        request_timeout: 10,
+    };
+
+    let users_manager = UsersManager::new(
+        &mongo_config,
+        UsersManagerConfig {
+            secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
+            lifetime: std::time::Duration::from_secs(600),
+            user_profile_attributes: UserProfileAttributes::default(),
+            email_verification: EmailVerificationConfig {
+                mailer_base_url: "http://mailer".try_into().unwrap(),
+                send_timeout: std::time::Duration::from_secs(10),
+                template_url: "https://registration?token={{VERIFICATION_TOKEN}}".to_string(),
+                from: EmailFrom {
+                    email: "gwg@airdao.io".try_into().unwrap(),
+                    name: "AirDAO Gov Portal".to_string(),
+                },
+                subject: "Complete Your Governor Email Verification".to_string(),
+            },
+            moderators: vec![],
+        },
+    )
+    .await?;
+
+    users_manager
+        .mongo_client
+        .collection
+        .delete_many(bson::doc! {})
+        .await?;
+
+    let addr_1 = Address::from_low_u64_le(1);
+
+    users_manager
+        .upsert_user_sbt(
+            addr_1,
+            SBTInfo {
+                address: Address::from_low_u64_le(12345678),
+                name: "Test1".to_owned(),
+                issued_at: Utc::now(),
+            },
+        )
+        .await?;
+
+    users_manager
+        .upsert_user_sbt(
+            addr_1,
+            SBTInfo {
+                address: Address::from_low_u64_le(12345679),
+                name: "Test2".to_owned(),
+                issued_at: Utc::now(),
+            },
+        )
+        .await?;
+
+    // Verify that email can be added to user with only sbts set
+    users_manager
+        .upsert_user(addr_1, "test@test.com".try_into()?)
+        .await?;
+
+    // Verify that SBT can be updated
+    users_manager
+        .upsert_user_sbt(
+            addr_1,
+            SBTInfo {
+                address: Address::from_low_u64_le(12345678),
+                name: "Test1".to_owned(),
+                issued_at: Utc::now(),
+            },
+        )
+        .await?;
+
+    users_manager.mongo_client.collection.drop().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_user_sbt_list_endpoint() -> Result<(), anyhow::Error> {
+    let mongo_config = mongo_client::MongoConfig {
+        url: Some("mongodb://localhost:27017".to_owned()),
+        db: "AirDAOGovPortal_IntegrationTest".to_owned(),
+        collection: "Users".to_owned(),
+        request_timeout: 10,
+    };
+
+    let users_manager = std::sync::Arc::new(
+        UsersManager::new(
+            &mongo_config,
+            UsersManagerConfig {
+                secret: "IntegrationTestRegistrationSecretForJWT".to_owned(),
+                lifetime: std::time::Duration::from_secs(600),
+                user_profile_attributes: UserProfileAttributes::default(),
+                email_verification: EmailVerificationConfig {
+                    mailer_base_url: "http://mailer".try_into().unwrap(),
+                    send_timeout: std::time::Duration::from_secs(10),
+                    template_url: "https://registration?token={{VERIFICATION_TOKEN}}".to_string(),
+                    from: EmailFrom {
+                        email: "gwg@airdao.io".try_into().unwrap(),
+                        name: "AirDAO Gov Portal".to_string(),
+                    },
+                    subject: "Complete Your Governor Email Verification".to_string(),
+                },
+                moderators: vec![],
+            },
+        )
+        .await?,
+    );
+
+    users_manager
+        .mongo_client
+        .collection
+        .delete_many(bson::doc! {})
+        .await?;
+
+    let issued_at = Utc::now().trunc_subsecs(0);
+
+    futures_util::future::join_all((1u64..=2).map(|i| {
+        let users_manager = users_manager.clone();
+
+        async move {
+            let wallet = Address::from_low_u64_le(i);
+            for j in 1..=i {
+                let sbt_info = SBTInfo {
+                    address: Address::from_low_u64_le(100200300400 + j),
+                    name: format!("Test-{j}"),
+                    issued_at,
+                };
+                users_manager
+                    .upsert_user_sbt(wallet, sbt_info)
+                    .await
+                    .unwrap();
+            }
+        }
+    }))
+    .await;
+
+    let user_with_no_sbts = Address::from_low_u64_le(0);
+    let user_which_not_exist = Address::from_low_u64_le(1_234_567);
+
+    users_manager
+        .upsert_user(user_with_no_sbts, "test@test.com".try_into()?)
+        .await?;
+
+    assert_matches!(
+        users_manager
+            .get_user_sbt_list_by_wallet(user_which_not_exist)
+            .await,
+        Err(error::Error::UserNotFound)
+    );
+
+    assert!(users_manager
+        .get_user_sbt_list_by_wallet(user_with_no_sbts)
+        .await
+        .unwrap()
+        .is_empty());
+
+    assert_eq!(
+        users_manager
+            .get_user_sbt_list_by_wallet(Address::from_low_u64_le(1))
+            .await
+            .unwrap(),
+        vec![SBTInfo {
+            address: Address::from_low_u64_le(100200300401),
+            name: "Test-1".to_string(),
+            issued_at,
+        }]
+    );
+
+    assert_eq!(
+        {
+            let mut sbt_list = users_manager
+                .get_user_sbt_list_by_wallet(Address::from_low_u64_le(2))
+                .await
+                .unwrap();
+            sbt_list.sort_by(|l, r| l.address.cmp(&r.address));
+            sbt_list
+        },
+        vec![
+            SBTInfo {
+                address: Address::from_low_u64_le(100200300401),
+                name: "Test-1".to_string(),
+                issued_at,
+            },
+            SBTInfo {
+                address: Address::from_low_u64_le(100200300402),
+                name: "Test-2".to_string(),
+                issued_at,
+            }
         ]
     );
 

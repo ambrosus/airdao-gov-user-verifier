@@ -4,7 +4,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use cid::Cid;
 use ethabi::{encode, Address, ParamType, Token};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use std::{fmt::Display, ops::Deref, str::FromStr, time::Duration};
+use std::{collections::HashMap, fmt::Display, ops::Deref, str::FromStr, time::Duration};
 
 use crate::utils::{self, decode_sbt_request};
 
@@ -73,6 +73,35 @@ pub struct SBTRequest {
 }
 
 /// User's profile information struct
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, PartialOrd, Ord, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SBTInfo {
+    pub address: Address,
+    pub name: String,
+    pub issued_at: DateTime<Utc>,
+}
+
+// /// User's profile information struct
+// #[derive(Debug, Clone, Serialize, Deserialize)]
+// #[serde(untagged)]
+// pub enum SBTDbEntry {
+//     Valid {
+//         name: String,
+//         #[serde(rename = "issuedAt", with = "utils::datetime_secs_i64")]
+//         issued_at: DateTime<Utc>,
+//     },
+//     Invalid(serde_json::Value),
+// }
+
+/// User's profile information struct
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SBTDbEntry {
+    pub name: String,
+    #[serde(rename = "issuedAt", with = "utils::datetime_secs_i64")]
+    pub issued_at: DateTime<Utc>,
+}
+
+/// User's profile information struct
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UserProfile {
@@ -133,6 +162,9 @@ pub struct UserDbEntry {
     /// Users profile information
     #[serde(default, skip_serializing_if = "Option::is_none", flatten)]
     pub profile: Option<UserProfile>,
+    /// Users profile information
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub sbts: HashMap<Address, SBTDbEntry>,
 }
 
 impl From<User> for UserDbEntry {
@@ -142,6 +174,7 @@ impl From<User> for UserDbEntry {
             quiz_solved: None,
             blocked_until: None,
             profile: user.profile,
+            sbts: Default::default(),
         }
     }
 }
@@ -699,16 +732,137 @@ impl Serialize for WrappedCid {
     }
 }
 
+impl From<(Address, SBTDbEntry)> for SBTInfo {
+    fn from((address, sbt_entry): (Address, SBTDbEntry)) -> Self {
+        Self {
+            address,
+            name: sbt_entry.name,
+            issued_at: sbt_entry.issued_at,
+        }
+    }
+}
+
+impl From<SBTInfo> for (Address, SBTDbEntry) {
+    fn from(sbt_info: SBTInfo) -> Self {
+        (
+            sbt_info.address,
+            SBTDbEntry {
+                name: sbt_info.name,
+                issued_at: sbt_info.issued_at,
+            },
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
+    use chrono::{DateTime, Utc};
     use ethereum_types::Address;
     use hex::ToHex;
     use serde_email::Email;
     use std::time::Duration;
 
     use super::{SessionTokenKind, UserDbEntry, UserProfile, UserProfileStatus, WrappedCid};
-    use crate::common::{CompletionToken, RawSessionToken, User};
+    use crate::common::{CompletionToken, RawSessionToken, SBTDbEntry, SBTInfo, User};
+
+    #[test]
+    fn test_de_user_db_entry() {
+        assert!(serde_json::from_str::<UserDbEntry>(
+            r#"{
+                "wallet": "0x0000000000000000000000000000000000000000",
+                "0": "1"
+            }"#
+        )
+        .unwrap()
+        .sbts
+        .into_iter()
+        .map(SBTInfo::from)
+        .collect::<Vec<_>>()
+        .is_empty(),);
+
+        let mut sbts = serde_json::from_str::<UserDbEntry>(
+            r#"{
+            "wallet": "0x0000000000000000000000000000000000000000",
+            "0": 1,
+            "sbts": {
+                "0x0000000000000000000000000000000000001234": {
+                    "name": "Test1",
+                    "issuedAt": 1724525883
+                },
+                "0x0000000000000000000000000000000000001235": {
+                    "name": "Test2",
+                    "issuedAt": 1724525883
+                }                
+            },
+            "test": "value"
+        }"#,
+        )
+        .unwrap()
+        .sbts
+        .into_iter()
+        .map(SBTInfo::from)
+        .collect::<Vec<_>>();
+
+        sbts.sort_by(|l, r| l.address.cmp(&r.address));
+
+        assert_eq!(
+            sbts,
+            vec![
+                SBTInfo {
+                    address: "0x0000000000000000000000000000000000001234"
+                        .parse()
+                        .unwrap(),
+                    name: "Test1".to_owned(),
+                    issued_at: DateTime::<Utc>::from_timestamp(1724525883, 0).unwrap(),
+                },
+                SBTInfo {
+                    address: "0x0000000000000000000000000000000000001235"
+                        .parse()
+                        .unwrap(),
+                    name: "Test2".to_owned(),
+                    issued_at: DateTime::<Utc>::from_timestamp(1724525883, 0).unwrap(),
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_ser_user_db_entry() {
+        assert_eq!(
+            serde_json::to_string(&UserDbEntry {
+                wallet: default_user_wallet(),
+                quiz_solved: None,
+                blocked_until: None,
+                profile: None,
+                sbts: Default::default()
+            })
+            .unwrap()
+            .as_str(),
+            r#"{"wallet":"0x0000000000000000000000000000000000000000"}"#
+        );
+
+        assert_eq!(
+            serde_json::to_string(&UserDbEntry {
+                wallet: default_user_wallet(),
+                quiz_solved: None,
+                blocked_until: None,
+                profile: None,
+                sbts: vec![SBTInfo {
+                    address: "0x0000000000000000000000000000000000001234"
+                        .parse()
+                        .unwrap(),
+                    name: "Test1".to_owned(),
+                    issued_at: DateTime::<Utc>::from_timestamp(1724525883, 0).unwrap(),
+                }]
+                .into_iter()
+                .map(<(Address, SBTDbEntry)>::from)
+                .collect()
+            })
+            .unwrap()
+            .as_str(),
+            r#"{"wallet":"0x0000000000000000000000000000000000000000","sbts":{"0x0000000000000000000000000000000000001234":{"name":"Test1","issuedAt":1724525883}}}"#
+        );
+    }
 
     #[test]
     fn test_session_token() {
@@ -874,6 +1028,7 @@ mod tests {
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: Some(test_user_profile()),
+                        sbts: Default::default(),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -892,6 +1047,7 @@ mod tests {
                             bio: None,
                             ..test_user_profile()
                         }),
+                        sbts: Default::default(),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -910,6 +1066,7 @@ mod tests {
                             name: None,
                             ..test_user_profile()
                         }),
+                        sbts: Default::default(),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -928,6 +1085,7 @@ mod tests {
                             role: None,
                             ..test_user_profile()
                         }),
+                        sbts: Default::default(),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -946,6 +1104,7 @@ mod tests {
                             avatar: None,
                             ..test_user_profile()
                         }),
+                        sbts: Default::default(),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -961,6 +1120,7 @@ mod tests {
                         quiz_solved: Some(false),
                         blocked_until: None,
                         profile: Some(test_user_profile()),
+                        sbts: Default::default(),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -981,6 +1141,7 @@ mod tests {
                             bio: None,
                             ..test_user_profile()
                         }),
+                        sbts: Default::default(),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "test".as_bytes(),
@@ -996,6 +1157,7 @@ mod tests {
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: Some(test_user_profile()),
+                        sbts: Default::default(),
                     },
                     Utc::now() + Duration::from_secs(300),
                     "unknown_secret".as_bytes(),
@@ -1011,6 +1173,7 @@ mod tests {
                         quiz_solved: Some(true),
                         blocked_until: None,
                         profile: Some(test_user_profile()),
+                        sbts: Default::default(),
                     },
                     Utc::now() - Duration::from_secs(300),
                     "test".as_bytes(),

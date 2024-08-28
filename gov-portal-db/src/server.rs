@@ -9,8 +9,8 @@ use tower_http::cors::CorsLayer;
 
 use shared::{
     common::{
-        SendEmailRequest, SendEmailRequestKind, SessionToken, User, UserEmailConfirmationToken,
-        UserProfile, UserProfileStatus,
+        SBTInfo, SendEmailRequest, SendEmailRequestKind, SessionToken, User,
+        UserEmailConfirmationToken, UserProfile, UserProfileStatus,
     },
     rpc_node_client::RpcNodeClient,
 };
@@ -133,6 +133,13 @@ pub struct SBTReportRequest {
     pub limit: Option<u64>,
 }
 
+/// JSON-serialized request passed as POST-data to `/sbt-list` endpoint
+#[derive(Debug, Deserialize)]
+pub struct SBTListRequest {
+    pub token: SessionToken,
+    pub wallet: Address,
+}
+
 /// JSON-serialized request passed as POST-data to `/quiz` endpoint
 #[derive(Debug, Deserialize)]
 pub struct QuizRequest {
@@ -217,6 +224,7 @@ pub async fn start(
         .route("/token", post(token_route))
         .route("/status", post(status_route))
         .route("/sbt-report", post(sbt_report_route))
+        .route("/sbt-list", post(sbt_list_route))
         .route("/user", post(user_route))
         .route("/users", post(users_route))
         .route("/update-user", post(update_user_route))
@@ -280,7 +288,7 @@ async fn status_route(
     res.map(Json)
 }
 
-/// Route handler to read User's profile from MongoDB
+/// Route handler to request User's SBT report from RPC node
 async fn sbt_report_route(
     State(state): State<AppState>,
     Json(req): Json<SBTReportRequest>,
@@ -289,6 +297,28 @@ async fn sbt_report_route(
 
     let res = match state.session_manager.verify_internal_token(&req.token) {
         Ok(_) => get_sbt_report(state, req).await.map_err(|e| e.to_string()),
+
+        Err(e) => Err(format!("Request failure. Error: {e}")),
+    };
+
+    tracing::debug!("[/sbt-report] Response {res:?}");
+
+    res.map(Json)
+}
+
+/// Route handler to read User's SBT list from MongoDB
+async fn sbt_list_route(
+    State(state): State<AppState>,
+    Json(req): Json<SBTListRequest>,
+) -> Result<Json<Vec<SBTInfo>>, String> {
+    tracing::debug!("[/sbt-list] Request {req:?}");
+
+    let res = match state.session_manager.verify_internal_token(&req.token) {
+        Ok(_) => state
+            .users_manager
+            .get_user_sbt_list_by_wallet(req.wallet)
+            .await
+            .map_err(|e| format!("Unable to acquire user SBT list. Error: {e}")),
 
         Err(e) => Err(format!("Request failure. Error: {e}")),
     };
