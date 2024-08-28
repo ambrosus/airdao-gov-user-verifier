@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::{
     quiz::QuizConfig,
     sbt::SBTKind,
-    session_token::SessionConfig,
+    session_manager::SessionConfig,
     users_manager::{mongo_client::MongoConfig, UsersManagerConfig},
 };
 use shared::rpc_node_client::RpcNodeConfig;

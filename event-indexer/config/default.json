@@ -1,0 +1,10 @@
+{
+    "db": {
+        "url": null,
+        "requestTimeout": 10,
+        "session": {
+            "secret": null,
+            "lifetime": 86400
+        }
+    }
+}

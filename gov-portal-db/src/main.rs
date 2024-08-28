@@ -3,13 +3,13 @@ mod error;
 mod quiz;
 mod sbt;
 mod server;
-mod session_token;
+mod session_manager;
 mod users_manager;
 
 use clap::{Args, Parser, Subcommand};
 use std::{sync::Arc, time::Duration};
 
-use session_token::SessionManager;
+use session_manager::SessionManager;
 use shared::{logger, utils};
 use users_manager::UsersManager;
 

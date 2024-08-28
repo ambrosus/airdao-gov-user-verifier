@@ -20,7 +20,7 @@ use crate::{
     error::AppError,
     quiz::{Quiz, QuizAnswer, QuizQuestion},
     sbt::{HumanSBT, NonExpiringSBT, SBTContract, SBTKind, SBT},
-    session_token::SessionManager,
+    session_manager::SessionManager,
     users_manager::{QuizResult, UsersManager},
 };
 

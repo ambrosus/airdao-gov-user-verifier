@@ -1,5 +1,5 @@
 [package]
-name = "airdao-gov-portal-db"
+name = "airdao-event-indexer"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 # Local
 shared = { path = "../shared/" }
+airdao-gov-portal-db = { path = "../gov-portal-db"}
 
 # Async
 tokio = { workspace = true }

@@ -6,6 +6,7 @@ members = [
     "shared",
     "mailer",
     "profiles-fetcher",
+    "event-indexer"
 ]
 resolver = "2"
 

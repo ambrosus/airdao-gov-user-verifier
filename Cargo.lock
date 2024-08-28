@@ -40,6 +40,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "airdao-event-indexer"
+version = "0.1.0"
+dependencies = [
+ "airdao-gov-portal-db",
+ "anyhow",
+ "assert_matches",
+ "axum",
+ "backtrace",
+ "base64 0.13.1",
+ "bson",
+ "chrono",
+ "clap",
+ "config",
+ "dotenv",
+ "ecdsa",
+ "ethabi",
+ "ethereum-types",
+ "futures-util",
+ "hex",
+ "jsonwebtoken",
+ "k256",
+ "log",
+ "mongodb",
+ "rand",
+ "reqwest 0.11.27",
+ "serde",
+ "serde-email",
+ "serde-enum-str",
+ "serde_json",
+ "sha3",
+ "shared",
+ "thiserror",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "web3",
+]
+
+[[package]]
 name = "airdao-gov-portal-db"
 version = "0.1.0"
 dependencies = [
