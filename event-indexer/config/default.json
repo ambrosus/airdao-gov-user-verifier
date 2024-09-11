@@ -6,7 +6,7 @@
         "requestTimeout": 10,
         "session": {
             "secret": null,
-            "lifetime": 86400
+            "lifetime": 3600
         }
     },
     "contracts": {
