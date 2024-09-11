@@ -1,13 +1,13 @@
 #![cfg(feature = "enable-integration-tests")]
 
+use assert_matches::assert_matches;
+use web3::types::Address;
+
 use airdao_gov_portal_db::{
     quiz::{Quiz, QuizAnswer, QuizConfig},
     users_manager::{EmailVerificationConfig, *},
 };
-use assert_matches::assert_matches;
-use chrono::{SubsecRound, Utc};
 use shared::common::{EmailFrom, SBTInfo, User, UserProfile, UserProfileStatus, WrappedCid};
-use web3::types::Address;
 
 #[tokio::test]
 async fn test_server_status() -> Result<(), anyhow::Error> {
@@ -276,7 +276,7 @@ async fn test_upsert_user_sbt() -> Result<(), anyhow::Error> {
             SBTInfo {
                 address: Address::from_low_u64_le(12345678),
                 name: "Test1".to_owned(),
-                issued_at: Utc::now(),
+                issued_at_block: 1,
             },
         )
         .await?;
@@ -287,7 +287,7 @@ async fn test_upsert_user_sbt() -> Result<(), anyhow::Error> {
             SBTInfo {
                 address: Address::from_low_u64_le(12345679),
                 name: "Test2".to_owned(),
-                issued_at: Utc::now(),
+                issued_at_block: 2,
             },
         )
         .await?;
@@ -304,7 +304,7 @@ async fn test_upsert_user_sbt() -> Result<(), anyhow::Error> {
             SBTInfo {
                 address: Address::from_low_u64_le(12345678),
                 name: "Test1".to_owned(),
-                issued_at: Utc::now(),
+                issued_at_block: 3,
             },
         )
         .await?;
@@ -352,8 +352,6 @@ async fn test_user_sbt_list_endpoint() -> Result<(), anyhow::Error> {
         .delete_many(bson::doc! {})
         .await?;
 
-    let issued_at = Utc::now().trunc_subsecs(0);
-
     futures_util::future::join_all((1u64..=2).map(|i| {
         let users_manager = users_manager.clone();
 
@@ -363,7 +361,7 @@ async fn test_user_sbt_list_endpoint() -> Result<(), anyhow::Error> {
                 let sbt_info = SBTInfo {
                     address: Address::from_low_u64_le(100200300400 + j),
                     name: format!("Test-{j}"),
-                    issued_at,
+                    issued_at_block: i * 100 + j,
                 };
                 users_manager
                     .upsert_user_sbt(wallet, sbt_info)
@@ -402,7 +400,7 @@ async fn test_user_sbt_list_endpoint() -> Result<(), anyhow::Error> {
         vec![SBTInfo {
             address: Address::from_low_u64_le(100200300401),
             name: "Test-1".to_string(),
-            issued_at,
+            issued_at_block: 101,
         }]
     );
 
@@ -419,12 +417,12 @@ async fn test_user_sbt_list_endpoint() -> Result<(), anyhow::Error> {
             SBTInfo {
                 address: Address::from_low_u64_le(100200300401),
                 name: "Test-1".to_string(),
-                issued_at,
+                issued_at_block: 201,
             },
             SBTInfo {
                 address: Address::from_low_u64_le(100200300402),
                 name: "Test-2".to_string(),
-                issued_at,
+                issued_at_block: 202,
             }
         ]
     );

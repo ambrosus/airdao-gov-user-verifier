@@ -15,9 +15,11 @@ tokio = { workspace = true }
 futures-util = { workspace = true }
 
 # Ethereum
+ethers = { workspace = true }
 ethabi = { workspace = true }
 ethereum-types = { workspace = true }
 web3 = { workspace = true }
+ethers-providers = { workspace = true }
 
 # Crypto
 k256 = { workspace = true }
@@ -45,6 +47,7 @@ log = { workspace = true }
 
 # Persistence
 mongodb = { workspace = true }
+redis = { workspace = true }
 
 # Misc
 backtrace = { workspace = true }

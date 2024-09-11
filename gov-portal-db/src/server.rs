@@ -9,8 +9,8 @@ use tower_http::cors::CorsLayer;
 
 use shared::{
     common::{
-        SBTInfo, SendEmailRequest, SendEmailRequestKind, SessionToken, User,
-        UserEmailConfirmationToken, UserProfile, UserProfileStatus,
+        SBTInfo, SendEmailRequest, SendEmailRequestKind, SessionToken, UpdateSBTKind,
+        UpdateUserSBTRequest, User, UserEmailConfirmationToken, UserProfile, UserProfileStatus,
     },
     rpc_node_client::RpcNodeClient,
 };
@@ -228,6 +228,7 @@ pub async fn start(
         .route("/user", post(user_route))
         .route("/users", post(users_route))
         .route("/update-user", post(update_user_route))
+        .route("/update-user-sbt", post(update_user_sbt_route))
         .route("/check-email", post(check_email_route))
         .route("/verify-email", post(verify_email_route))
         .route("/quiz", post(quiz_route))
@@ -479,6 +480,37 @@ async fn update_user_route(
     };
 
     tracing::debug!("[/update-user] Response {res:?}");
+
+    res.map(Json)
+}
+
+/// Route handler to update User's SBT in MongoDB
+async fn update_user_sbt_route(
+    State(state): State<AppState>,
+    Json(update_req): Json<UpdateUserSBTRequest>,
+) -> Result<Json<()>, String> {
+    tracing::debug!("[/update-user] Request {:?}", update_req);
+
+    let res = match state
+        .session_manager
+        .verify_internal_token(&update_req.token)
+        .map(|_| (update_req.wallet, update_req.kind))
+    {
+        Ok((wallet, UpdateSBTKind::Upsert(sbt))) => state
+            .users_manager
+            .upsert_user_sbt(wallet, sbt)
+            .await
+            .map_err(|e| format!("Unable to update user profile. Error: {e}")),
+        Ok((wallet, UpdateSBTKind::Remove { sbt_address })) => state
+            .users_manager
+            .remove_user_sbt(wallet, sbt_address)
+            .await
+            .map_err(|e| format!("Unable to update user profile. Error: {e}")),
+
+        Err(e) => Err(format!("User update request failure. Error: {e}")),
+    };
+
+    tracing::debug!("[/update-user-sbt] Response {res:?}");
 
     res.map(Json)
 }
@@ -755,7 +787,13 @@ mod tests {
 
     use super::*;
     use crate::quiz::{QuizQuestionDifficultyLevel, QuizVariant};
+    use axum::response::IntoResponse;
     use shared::rpc_node_client::{RpcNodeClient, RpcNodeConfig};
+
+    #[test]
+    fn test_() {
+        println!("{:?}", Json::into_response(Json(())).body());
+    }
 
     #[tokio::test]
     #[ignore]

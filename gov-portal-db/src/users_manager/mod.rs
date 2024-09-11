@@ -173,8 +173,6 @@ impl UsersManager {
         })
         .await?;
 
-        println!("--- {upsert_result:?}");
-
         match upsert_result {
             // Register new user or update email
             Ok(UpdateResult {
@@ -192,8 +190,7 @@ impl UsersManager {
         }
     }
 
-    /// Registers new user by writing verified [`UserDbEntry`] struct to MongoDB, which will be uniquely indexed by
-    /// EVM-like wallet address [`Address`] and user email [`serde_email::Email`].
+    /// Upsert SBT struct to MongoDB for a user by wallet address [`Address`]
     pub async fn upsert_user_sbt(&self, wallet: Address, sbt: SBTInfo) -> Result<(), error::Error> {
         let query = doc! {
             "wallet": bson::to_bson(&wallet)?,
@@ -217,6 +214,38 @@ impl UsersManager {
         .await?;
 
         match upsert_result {
+            // Upserts an SBT entry for a wallet
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Upsert SBT struct to MongoDB for a user by wallet address [`Address`]
+    pub async fn remove_user_sbt(
+        &self,
+        wallet: Address,
+        sbt_address: Address,
+    ) -> Result<(), error::Error> {
+        let query = doc! {
+            "wallet": bson::to_bson(&wallet)?,
+        };
+
+        let unset_doc = doc! {
+            format!("sbts.0x{}", hex::encode(sbt_address)): "",
+        };
+
+        let update = doc! {
+            "$unset": unset_doc
+        };
+
+        let options = UpdateOptions::builder().upsert(true).build();
+
+        let unset_result = tokio::time::timeout(self.mongo_client.req_timeout, async {
+            self.mongo_client.update_one(query, update, options).await
+        })
+        .await?;
+
+        match unset_result {
             // Upserts an SBT entry for a wallet
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),

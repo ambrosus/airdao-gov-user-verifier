@@ -1,4 +1,4 @@
-**/config/custom.json
+**/config/custom.*
 /target
 **/*.rs.bk
 .idea/

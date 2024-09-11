@@ -72,33 +72,40 @@ pub struct SBTRequest {
     pub sbt_expires_at: u64,
 }
 
+/// JSON-serialized request passed as POST-data to `/update-user-sbt` endpoint
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateUserSBTRequest {
+    pub wallet: Address,
+    pub token: SessionToken,
+    #[serde(flatten)]
+    pub kind: UpdateSBTKind,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum UpdateSBTKind {
+    Upsert(SBTInfo),
+    Remove {
+        #[serde(alias = "address")]
+        sbt_address: Address,
+    },
+}
+
 /// User's profile information struct
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, PartialOrd, Ord, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SBTInfo {
     pub address: Address,
     pub name: String,
-    pub issued_at: DateTime<Utc>,
+    pub issued_at_block: u64,
 }
-
-// /// User's profile information struct
-// #[derive(Debug, Clone, Serialize, Deserialize)]
-// #[serde(untagged)]
-// pub enum SBTDbEntry {
-//     Valid {
-//         name: String,
-//         #[serde(rename = "issuedAt", with = "utils::datetime_secs_i64")]
-//         issued_at: DateTime<Utc>,
-//     },
-//     Invalid(serde_json::Value),
-// }
 
 /// User's profile information struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SBTDbEntry {
     pub name: String,
-    #[serde(rename = "issuedAt", with = "utils::datetime_secs_i64")]
-    pub issued_at: DateTime<Utc>,
+    pub issued_at_block: u64,
 }
 
 /// User's profile information struct
@@ -351,7 +358,7 @@ impl User {
 }
 
 /// Session JWT token for an access to MongoDB
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct SessionToken(String);
 
 impl std::fmt::Display for SessionToken {
@@ -737,7 +744,7 @@ impl From<(Address, SBTDbEntry)> for SBTInfo {
         Self {
             address,
             name: sbt_entry.name,
-            issued_at: sbt_entry.issued_at,
+            issued_at_block: sbt_entry.issued_at_block,
         }
     }
 }
@@ -748,7 +755,7 @@ impl From<SBTInfo> for (Address, SBTDbEntry) {
             sbt_info.address,
             SBTDbEntry {
                 name: sbt_info.name,
-                issued_at: sbt_info.issued_at,
+                issued_at_block: sbt_info.issued_at_block,
             },
         )
     }
@@ -756,14 +763,40 @@ impl From<SBTInfo> for (Address, SBTDbEntry) {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, Utc};
+    use chrono::Utc;
     use ethereum_types::Address;
     use hex::ToHex;
     use serde_email::Email;
     use std::time::Duration;
 
-    use super::{SessionTokenKind, UserDbEntry, UserProfile, UserProfileStatus, WrappedCid};
+    use super::{
+        SessionTokenKind, UpdateUserSBTRequest, UserDbEntry, UserProfile, UserProfileStatus,
+        WrappedCid,
+    };
     use crate::common::{CompletionToken, RawSessionToken, SBTDbEntry, SBTInfo, User};
+
+    #[test]
+    fn test_de_update_user_sbt_req() {
+        let _ = serde_json::from_str::<UpdateUserSBTRequest>(
+            r#"{
+            "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
+            "address": "0x2d41b52C0683bed2C43727521493246256bD5B02",
+            "issuedAtBlock": 1000,
+            "name": "HumanSBT",
+            "token": "some_token"
+        }"#,
+        )
+        .unwrap();
+
+        let _ = serde_json::from_str::<UpdateUserSBTRequest>(
+            r#"{
+            "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
+            "address": "0x2d41b52C0683bed2C43727521493246256bD5B02",
+            "token": "some_token"
+        }"#,
+        )
+        .unwrap();
+    }
 
     #[test]
     fn test_de_user_db_entry() {
@@ -787,11 +820,11 @@ mod tests {
             "sbts": {
                 "0x0000000000000000000000000000000000001234": {
                     "name": "Test1",
-                    "issuedAt": 1724525883
+                    "issuedAtBlock": 1
                 },
                 "0x0000000000000000000000000000000000001235": {
                     "name": "Test2",
-                    "issuedAt": 1724525883
+                    "issuedAtBlock": 2
                 }                
             },
             "test": "value"
@@ -813,14 +846,14 @@ mod tests {
                         .parse()
                         .unwrap(),
                     name: "Test1".to_owned(),
-                    issued_at: DateTime::<Utc>::from_timestamp(1724525883, 0).unwrap(),
+                    issued_at_block: 1,
                 },
                 SBTInfo {
                     address: "0x0000000000000000000000000000000000001235"
                         .parse()
                         .unwrap(),
                     name: "Test2".to_owned(),
-                    issued_at: DateTime::<Utc>::from_timestamp(1724525883, 0).unwrap(),
+                    issued_at_block: 2,
                 }
             ]
         );
@@ -852,7 +885,7 @@ mod tests {
                         .parse()
                         .unwrap(),
                     name: "Test1".to_owned(),
-                    issued_at: DateTime::<Utc>::from_timestamp(1724525883, 0).unwrap(),
+                    issued_at_block: 1,
                 }]
                 .into_iter()
                 .map(<(Address, SBTDbEntry)>::from)
@@ -860,7 +893,7 @@ mod tests {
             })
             .unwrap()
             .as_str(),
-            r#"{"wallet":"0x0000000000000000000000000000000000000000","sbts":{"0x0000000000000000000000000000000000001234":{"name":"Test1","issuedAt":1724525883}}}"#
+            r#"{"wallet":"0x0000000000000000000000000000000000000000","sbts":{"0x0000000000000000000000000000000000001234":{"name":"Test1","issuedAtBlock":1}}}"#
         );
     }
 

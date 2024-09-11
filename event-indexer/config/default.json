@@ -1,4 +1,6 @@
 {
+    "redis": "redis://localhost:6379",
+    "rpcNode": "wss://network.ambrosus.io/ws",
     "db": {
         "url": null,
         "requestTimeout": 10,
@@ -6,5 +8,20 @@
             "secret": null,
             "lifetime": 86400
         }
+    },
+    "contracts": {
+        "HumanSBT": "0x2d41b52C0683bed2C43727521493246256bD5B02",
+        "SNOSBT": "0x012aA16B3D38FeB48ACe7067e6926953A9471865",
+        "OGSBT": "0xddE1BFab19d6dF8B965FC57471Ee49D5CAaAdbf0",
+        "CouncilSBT": "0x98dD1A1f1bA74E7503B028075cD8dA99ee3aABd3",
+        "ExCouncilSBT": "0x60802408cA35805d1fF24500De9c3A1aE9dE207d",
+        "TokenHolderSBT": "0x4923Ec0A4819A14E6E44B5E67EC48e155E4f21FB",
+        "AmbassadorSBT": "0x2EDb4423Ea84611eA891a9FD583dAC8F4bb211c5",
+        "ExternalDevSBT": "0x23ad94E997d9E473b9048056Ba1765F3Be5041C8",
+        "InHouseDevSBT": "0x88769714b6AD81C44414d60C6b795a5edc0f27B6",
+        "GWGMemberSBT": "0x26f2eC55587b71eB4ac67140F33814f8EfF593ef",
+        "InvestorSBT": "0xa58b7aD1a4046A9C4275bB0393E0cEC5C4D1EeF0",
+        "PartnerSBT": "0x2ae170F66e251273CBD8f040555C04C86E40d600",
+        "TeamSBT": "0x835c7E75003a502d0Dd4f0eb158104671478845f"
     }
 }
