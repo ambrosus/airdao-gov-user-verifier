@@ -2,7 +2,9 @@ use ethereum_types::Address;
 use serde::Deserialize;
 
 use airdao_gov_portal_db::session_manager::{SessionConfig, SessionManager};
-use shared::common::{SBTInfo, UpdateSBTKind, UpdateUserSBTRequest};
+use shared::common::{
+    RewardInfo, SBTInfo, UpdateRewardKind, UpdateRewardRequest, UpdateSBTKind, UpdateUserSBTRequest,
+};
 
 use crate::auto_refresh_token::AutoRefreshToken;
 
@@ -88,6 +90,91 @@ impl GovDbProvider {
                 wallet,
                 token,
                 kind: UpdateSBTKind::Remove { sbt_address },
+            })
+            .send()
+            .await?
+            .bytes()
+            .await?;
+
+        let Ok(json) = axum::Json::<()>::from_bytes(&bytes) else {
+            match String::from_utf8(bytes.to_vec()) {
+                Ok(text) => anyhow::bail!("{}", text),
+                Err(_) => {
+                    anyhow::bail!("Unexpected response {bytes:?}")
+                }
+            }
+        };
+
+        Ok(json)
+    }
+
+    pub async fn insert_reward(&mut self, reward: RewardInfo) -> anyhow::Result<axum::Json<()>> {
+        let token = self.auto_refresh_token.acquire_token()?.clone();
+
+        let bytes = self
+            .client
+            .post([&self.config.url, "update-reward"].concat())
+            .json(&UpdateRewardRequest {
+                token,
+                kind: UpdateRewardKind::Grant(reward),
+            })
+            .send()
+            .await?
+            .bytes()
+            .await?;
+
+        let Ok(json) = axum::Json::<()>::from_bytes(&bytes) else {
+            match String::from_utf8(bytes.to_vec()) {
+                Ok(text) => anyhow::bail!("{}", text),
+                Err(_) => {
+                    anyhow::bail!("Unexpected response {bytes:?}")
+                }
+            }
+        };
+
+        Ok(json)
+    }
+
+    pub async fn claim_reward(
+        &mut self,
+        wallet: Address,
+        id: u64,
+    ) -> anyhow::Result<axum::Json<()>> {
+        let token = self.auto_refresh_token.acquire_token()?.clone();
+
+        let bytes = self
+            .client
+            .post([&self.config.url, "update-reward"].concat())
+            .json(&UpdateRewardRequest {
+                token,
+                kind: UpdateRewardKind::Claim { wallet, id },
+            })
+            .send()
+            .await?
+            .bytes()
+            .await?;
+
+        let Ok(json) = axum::Json::<()>::from_bytes(&bytes) else {
+            match String::from_utf8(bytes.to_vec()) {
+                Ok(text) => anyhow::bail!("{}", text),
+                Err(_) => {
+                    anyhow::bail!("Unexpected response {bytes:?}")
+                }
+            }
+        };
+
+        Ok(json)
+    }
+
+    pub async fn revert_reward(&mut self, id: u64) -> anyhow::Result<axum::Json<()>> {
+        let token = self.auto_refresh_token.acquire_token()?.clone();
+
+        let bytes = self
+            .client
+            .post([&self.config.url, "update-reward"].concat())
+            .json(&UpdateRewardRequest {
+                token,
+                kind: UpdateRewardKind::Revert { id },
             })
             .send()
             .await?

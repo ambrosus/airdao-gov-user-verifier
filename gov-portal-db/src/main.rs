@@ -1,6 +1,8 @@
 mod config;
 mod error;
+mod mongo_client;
 mod quiz;
+mod rewards_manager;
 mod sbt;
 mod server;
 mod session_manager;
@@ -9,6 +11,7 @@ mod users_manager;
 use clap::{Args, Parser, Subcommand};
 use std::{sync::Arc, time::Duration};
 
+use rewards_manager::RewardsManager;
 use session_manager::SessionManager;
 use shared::{logger, utils};
 use users_manager::UsersManager;
@@ -45,7 +48,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let users_manager =
         Arc::new(UsersManager::new(&config.mongo, config.users_manager.clone()).await?);
 
-    server::start(config, users_manager, session_manager).await?;
+    let rewards_manager =
+        Arc::new(RewardsManager::new(&config.mongo, config.rewards_manager.clone()).await?);
+
+    server::start(config, users_manager, rewards_manager, session_manager).await?;
 
     Ok(())
 }

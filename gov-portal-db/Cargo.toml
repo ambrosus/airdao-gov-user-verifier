@@ -12,6 +12,7 @@ shared = { path = "../shared/" }
 # Async
 tokio = { workspace = true }
 futures-util = { workspace = true }
+async-trait = { workspace = true }
 
 # Ethereum
 ethabi = { workspace = true }

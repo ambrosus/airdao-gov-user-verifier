@@ -20,6 +20,12 @@ const HUMAN_SBT_MINT_EVENT_SIGNATURE: ethereum_types::H256 =
 const NON_EXP_SBT_MINT_EVENT_SIGNATURE: ethereum_types::H256 =
     shared::event_signature!("SBTMint(address)");
 const SBT_BURN_EVENT_SIGNATURE: ethereum_types::H256 = shared::event_signature!("SBTBurn(address)");
+const REWARD_EVENT_SIGNATURE: ethereum_types::H256 =
+    shared::event_signature!("Reward(address,amount,timestamp)");
+const CLAIM_REWARD_EVENT_SIGNATURE: ethereum_types::H256 =
+    shared::event_signature!("ClaimReward(address,id,amount)");
+const REVERT_REWARD_EVENT_SIGNATURE: ethereum_types::H256 =
+    shared::event_signature!("RevertReward(id,total)");
 
 pub struct EventListener<T: PubsubClient> {
     provider: Arc<Provider<T>>,
@@ -125,10 +131,58 @@ impl std::fmt::Display for SBTBurnEvent {
     }
 }
 
+#[derive(Debug, Clone, EthEvent)]
+#[ethevent(name = "Reward")]
+pub struct RewardEvent {
+    #[ethevent(indexed)]
+    pub wallet: Address,
+    pub amount: U256,
+    pub timestamp: U256,
+}
+
+impl std::fmt::Display for RewardEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+#[derive(Debug, Clone, EthEvent)]
+#[ethevent(name = "ClaimReward")]
+pub struct ClaimRewardEvent {
+    #[ethevent(indexed)]
+    pub wallet: Address,
+    #[ethevent(indexed)]
+    pub id: U256,
+    pub amount: U256,
+}
+
+impl std::fmt::Display for ClaimRewardEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+#[derive(Debug, Clone, EthEvent)]
+#[ethevent(name = "RevertReward")]
+pub struct RevertRewardEvent {
+    #[ethevent(indexed)]
+    pub id: U256,
+    pub total: U256,
+}
+
+impl std::fmt::Display for RevertRewardEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
 #[derive(Debug)]
 pub enum GovEvent {
     SBTMint(Address),
     SBTBurn(Address),
+    Reward(Address, U256, U256),
+    ClaimReward(Address, u64),
+    RevertReward(u64),
 }
 
 /// Required trait for [`EthEvent::new`]
@@ -152,8 +206,10 @@ impl EthEvent for GovEvent {
         Self: Sized,
     {
         match log.topics.first() {
+            // SBT events
             Some(topic) if topic.eq(&HUMAN_SBT_MINT_EVENT_SIGNATURE) => {
                 if log.topics.len() == 1 {
+                    // Backward compatibility for non-indexed `wallet`
                     <GovSBTMintEventV0 as EthLogDecode>::decode_log(log)
                         .map(|event| Self::SBTMint(event.wallet))
                 } else {
@@ -167,6 +223,7 @@ impl EthEvent for GovEvent {
             }
             Some(topic) if topic.eq(&SBT_BURN_EVENT_SIGNATURE) => {
                 if log.topics.len() == 1 {
+                    // Backward compatibility for non-indexed `wallet`
                     <SBTBurnEventV0 as EthLogDecode>::decode_log(log)
                         .map(|event| Self::SBTBurn(event.wallet))
                 } else {
@@ -174,6 +231,21 @@ impl EthEvent for GovEvent {
                         .map(|event| Self::SBTBurn(event.wallet))
                 }
             }
+
+            // Reward distribution events
+            Some(topic) if topic.eq(&REWARD_EVENT_SIGNATURE) => {
+                <RewardEvent as EthLogDecode>::decode_log(log)
+                    .map(|event| Self::Reward(event.wallet, event.amount, event.timestamp))
+            }
+            Some(topic) if topic.eq(&CLAIM_REWARD_EVENT_SIGNATURE) => {
+                <ClaimRewardEvent as EthLogDecode>::decode_log(log)
+                    .map(|event| Self::ClaimReward(event.wallet, event.id.as_u64()))
+            }
+            Some(topic) if topic.eq(&REVERT_REWARD_EVENT_SIGNATURE) => {
+                <RevertRewardEvent as EthLogDecode>::decode_log(log)
+                    .map(|event| Self::RevertReward(event.id.as_u64()))
+            }
+
             Some(_) | None => Err(ethabi::Error::Other(ERR_UNHANDLED_EVENT.into())),
         }
     }

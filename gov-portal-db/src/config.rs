@@ -3,10 +3,8 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::{
-    quiz::QuizConfig,
-    sbt::SBTKind,
-    session_manager::SessionConfig,
-    users_manager::{mongo_client::MongoConfig, UsersManagerConfig},
+    mongo_client::MongoConfig, quiz::QuizConfig, rewards_manager::RewardsManagerConfig,
+    sbt::SBTKind, session_manager::SessionConfig, users_manager::UsersManagerConfig,
 };
 use shared::rpc_node_client::RpcNodeConfig;
 
@@ -19,6 +17,8 @@ pub struct AppConfig {
     pub session: SessionConfig,
     /// Users manager configuration
     pub users_manager: UsersManagerConfig,
+    /// Rewards manager configuration
+    pub rewards_manager: RewardsManagerConfig,
     /// MongoDB client configuration
     pub mongo: MongoConfig,
     /// Quiz configuration

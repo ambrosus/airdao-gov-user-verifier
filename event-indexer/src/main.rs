@@ -11,7 +11,10 @@ use tokio::time::{sleep_until, Instant};
 use event_listener::{EventListener, GovEvent, GovEventNotification};
 use gov_db_provider::GovDbProvider;
 use indexer_state_redis_cache::IndexerStateRedisCache;
-use shared::{common::SBTInfo, logger, utils};
+use shared::{
+    common::{RewardInfo, RewardStatus, SBTInfo},
+    logger, utils,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -80,6 +83,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .remove_user_sbt(wallet, event_notification.contract_address)
                         .await
                 }
+                GovEvent::Reward(wallet, amount, timestamp) => {
+                    gov_db_provider
+                        .insert_reward(RewardInfo {
+                            wallet,
+                            id: event_notification.block_number,
+                            amount,
+                            timestamp: timestamp.as_u64(),
+                            status: RewardStatus::Granted,
+                        })
+                        .await
+                }
+                GovEvent::ClaimReward(wallet, id) => gov_db_provider.claim_reward(wallet, id).await,
+                GovEvent::RevertReward(id) => gov_db_provider.revert_reward(id).await,
             };
 
             if let Ok(axum::Json(())) = result {

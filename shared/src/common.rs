@@ -3,6 +3,7 @@ use base64::{engine::general_purpose, Engine};
 use chrono::{DateTime, TimeZone, Utc};
 use cid::Cid;
 use ethabi::{encode, Address, ParamType, Token};
+use ethereum_types::U256;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::{collections::HashMap, fmt::Display, ops::Deref, str::FromStr, time::Duration};
 
@@ -81,6 +82,14 @@ pub struct UpdateUserSBTRequest {
     pub kind: UpdateSBTKind,
 }
 
+/// JSON-serialized request passed as POST-data to `/update-reward` endpoint
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateRewardRequest {
+    pub token: SessionToken,
+    #[serde(flatten)]
+    pub kind: UpdateRewardKind,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum UpdateSBTKind {
@@ -89,6 +98,14 @@ pub enum UpdateSBTKind {
         #[serde(alias = "address")]
         sbt_address: Address,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UpdateRewardKind {
+    Grant(RewardInfo),
+    Claim { wallet: Address, id: u64 },
+    Revert { id: u64 },
 }
 
 /// User's profile information struct
@@ -100,12 +117,70 @@ pub struct SBTInfo {
     pub issued_at_block: u64,
 }
 
-/// User's profile information struct
+/// All rewards information struct
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Rewards {
+    pub id: u64,
+    pub rewards_by_wallet: HashMap<Address, RewardInfo>,
+    pub timestamp: u64,
+    #[serde(default, skip_serializing_if = "RewardStatus::is_granted")]
+    pub status: RewardStatus,
+}
+
+/// User's reward information struct
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RewardInfo {
+    pub wallet: Address,
+    pub id: u64,
+    pub amount: U256,
+    pub timestamp: u64,
+    #[serde(default, skip_serializing_if = "RewardStatus::is_granted")]
+    pub status: RewardStatus,
+}
+
+/// User's profile information struct stored in MongoDB
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SBTDbEntry {
     pub name: String,
     pub issued_at_block: u64,
+}
+
+/// All rewards information struct stored in MongoDB
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RewardsDbEntry {
+    pub id: u64,
+    pub wallets: HashMap<Address, RewardDbEntry>,
+    #[serde(default)]
+    pub status: RewardStatus,
+}
+
+/// User's reward information struct stored in MongoDB
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RewardDbEntry {
+    pub amount: U256,
+    pub timestamp: u64,
+    #[serde(default, skip_serializing_if = "RewardStatus::is_granted")]
+    pub status: RewardStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum RewardStatus {
+    #[default]
+    Granted,
+    Claimed,
+    Reverted,
+}
+
+impl RewardStatus {
+    fn is_granted(&self) -> bool {
+        self == &RewardStatus::Granted
+    }
 }
 
 /// User's profile information struct
@@ -740,22 +815,48 @@ impl Serialize for WrappedCid {
 }
 
 impl From<(Address, SBTDbEntry)> for SBTInfo {
-    fn from((address, sbt_entry): (Address, SBTDbEntry)) -> Self {
+    fn from((address, value): (Address, SBTDbEntry)) -> Self {
         Self {
             address,
-            name: sbt_entry.name,
-            issued_at_block: sbt_entry.issued_at_block,
+            name: value.name,
+            issued_at_block: value.issued_at_block,
         }
     }
 }
 
 impl From<SBTInfo> for (Address, SBTDbEntry) {
-    fn from(sbt_info: SBTInfo) -> Self {
+    fn from(value: SBTInfo) -> Self {
         (
-            sbt_info.address,
+            value.address,
             SBTDbEntry {
-                name: sbt_info.name,
-                issued_at_block: sbt_info.issued_at_block,
+                name: value.name,
+                issued_at_block: value.issued_at_block,
+            },
+        )
+    }
+}
+
+impl From<(u64, Address, RewardDbEntry)> for RewardInfo {
+    fn from((id, wallet, value): (u64, Address, RewardDbEntry)) -> Self {
+        Self {
+            id,
+            wallet,
+            amount: value.amount,
+            timestamp: value.timestamp,
+            status: value.status,
+        }
+    }
+}
+
+impl From<RewardInfo> for (u64, Address, RewardDbEntry) {
+    fn from(value: RewardInfo) -> Self {
+        (
+            value.id,
+            value.wallet,
+            RewardDbEntry {
+                amount: value.amount,
+                timestamp: value.timestamp,
+                status: value.status,
             },
         )
     }
@@ -770,10 +871,57 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        SessionTokenKind, UpdateUserSBTRequest, UserDbEntry, UserProfile, UserProfileStatus,
-        WrappedCid,
+        SessionTokenKind, UpdateRewardRequest, UpdateUserSBTRequest, UserDbEntry, UserProfile,
+        UserProfileStatus, WrappedCid,
     };
     use crate::common::{CompletionToken, RawSessionToken, SBTDbEntry, SBTInfo, User};
+
+    #[test]
+    fn test_de_update_reward_req() {
+        let _ = serde_json::from_str::<UpdateRewardRequest>(
+            r#"{
+                "claim": {
+                    "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
+                    "id": 1
+                },
+                "token": "some_token"
+            }"#,
+        )
+        .unwrap();
+
+        let _ = serde_json::from_str::<UpdateRewardRequest>(
+            r#"{
+                "revert": {
+                    "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
+                    "id": 2
+                },
+                "token": "some_token"
+            }"#,
+        )
+        .unwrap();
+
+        let _ = serde_json::from_str::<UpdateRewardRequest>(
+            r#"{
+                "revert": {
+                    "id": 3
+                },
+                "token": "some_token"
+            }"#,
+        )
+        .unwrap();
+
+        let _ = serde_json::from_str::<UpdateRewardRequest>(
+            r#"{
+                "grant": {
+                    "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
+                    "id": 4,
+                    "amount": "1000000"
+                },
+                "token": "some_token"
+            }"#,
+        )
+        .unwrap();
+    }
 
     #[test]
     fn test_de_update_user_sbt_req() {

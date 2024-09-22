@@ -1,5 +1,5 @@
+pub mod client;
 pub mod error;
-pub mod mongo_client;
 
 use bson::doc;
 use chrono::{DateTime, Utc};
@@ -21,9 +21,9 @@ use shared::{
     utils,
 };
 
-use mongo_client::{MongoClient, MongoConfig};
+use crate::mongo_client::{MongoClient, MongoConfig, MONGO_DUPLICATION_ERROR};
+use client::UsersDbClient;
 
-const MONGO_DUPLICATION_ERROR: i32 = 11000;
 const MAX_GET_USERS_LIMIT: u64 = 1000;
 const DEFAULT_GET_USERS_LIMIT: u64 = 100;
 
@@ -40,6 +40,8 @@ pub struct UsersManagerConfig {
     pub user_profile_attributes: UserProfileAttributes,
     pub email_verification: EmailVerificationConfig,
     pub moderators: Vec<Address>,
+    /// MongoDB user profiles collection name
+    pub collection: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -119,7 +121,7 @@ impl Serialize for QuizResult {
 
 /// User profiles manager which provides read/write access to user profile data stored MongoDB
 pub struct UsersManager {
-    pub mongo_client: MongoClient,
+    pub db_client: UsersDbClient,
     pub mailer_client: reqwest::Client,
     pub mailer_url: url::Url,
     pub config: UsersManagerConfig,
@@ -131,10 +133,10 @@ impl UsersManager {
         mongo_config: &MongoConfig,
         config: UsersManagerConfig,
     ) -> anyhow::Result<Self> {
-        let mongo_client = MongoClient::new(mongo_config).await?;
+        let db_client = UsersDbClient::new(mongo_config, &config.collection).await?;
 
         Ok(Self {
-            mongo_client,
+            db_client,
             mailer_client: reqwest::Client::new(),
             mailer_url: config
                 .email_verification
@@ -168,8 +170,11 @@ impl UsersManager {
 
         let options = UpdateOptions::builder().upsert(true).build();
 
-        let upsert_result = tokio::time::timeout(self.mongo_client.req_timeout, async {
-            self.mongo_client.update_one(query, update, options).await
+        let upsert_result = tokio::time::timeout(self.db_client.req_timeout, async {
+            self.db_client
+                .collection()
+                .update_one(query, update, options)
+                .await
         })
         .await?;
 
@@ -208,8 +213,11 @@ impl UsersManager {
 
         let options = UpdateOptions::builder().upsert(true).build();
 
-        let upsert_result = tokio::time::timeout(self.mongo_client.req_timeout, async {
-            self.mongo_client.update_one(query, update, options).await
+        let upsert_result = tokio::time::timeout(self.db_client.req_timeout, async {
+            self.db_client
+                .collection()
+                .update_one(query, update, options)
+                .await
         })
         .await?;
 
@@ -220,7 +228,7 @@ impl UsersManager {
         }
     }
 
-    /// Upsert SBT struct to MongoDB for a user by wallet address [`Address`]
+    /// Remove SBT struct from MongoDB for a user by wallet address [`Address`] and SBT address [`Address`]
     pub async fn remove_user_sbt(
         &self,
         wallet: Address,
@@ -240,8 +248,11 @@ impl UsersManager {
 
         let options = UpdateOptions::builder().upsert(true).build();
 
-        let unset_result = tokio::time::timeout(self.mongo_client.req_timeout, async {
-            self.mongo_client.update_one(query, update, options).await
+        let unset_result = tokio::time::timeout(self.db_client.req_timeout, async {
+            self.db_client
+                .collection()
+                .update_one(query, update, options)
+                .await
         })
         .await?;
 
@@ -259,11 +270,12 @@ impl UsersManager {
         };
 
         let find_options = FindOptions::builder()
-            .max_time(self.mongo_client.req_timeout)
+            .max_time(self.db_client.req_timeout)
             .build();
 
-        let res = tokio::time::timeout(self.mongo_client.req_timeout, async {
-            self.mongo_client
+        let res = tokio::time::timeout(self.db_client.req_timeout, async {
+            self.db_client
+                .collection()
                 .find(filter, find_options)
                 .await?
                 .try_next()
@@ -299,11 +311,12 @@ impl UsersManager {
         };
 
         let find_options = FindOptions::builder()
-            .max_time(self.mongo_client.req_timeout)
+            .max_time(self.db_client.req_timeout)
             .build();
 
-        let res = tokio::time::timeout(self.mongo_client.req_timeout, async {
-            self.mongo_client
+        let res = tokio::time::timeout(self.db_client.req_timeout, async {
+            self.db_client
+                .collection()
                 .find(filter, find_options)
                 .await?
                 .try_next()
@@ -344,13 +357,17 @@ impl UsersManager {
             .clamp(1, MAX_GET_USERS_LIMIT) as i64;
 
         let find_options = FindOptions::builder()
-            .max_time(self.mongo_client.req_timeout)
+            .max_time(self.db_client.req_timeout)
             .skip(start)
             .limit(limit)
             .build();
 
-        let res = tokio::time::timeout(self.mongo_client.req_timeout, async {
-            let mut stream = self.mongo_client.find(doc! {}, find_options).await?;
+        let res = tokio::time::timeout(self.db_client.req_timeout, async {
+            let mut stream = self
+                .db_client
+                .collection()
+                .find(doc! {}, find_options)
+                .await?;
             let mut profiles = Vec::with_capacity(limit as usize);
             while let Ok(Some(doc)) = stream.try_next().await {
                 let profile =
@@ -408,11 +425,15 @@ impl UsersManager {
         };
 
         let find_options = FindOptions::builder()
-            .max_time(self.mongo_client.req_timeout)
+            .max_time(self.db_client.req_timeout)
             .build();
 
-        let res = tokio::time::timeout(self.mongo_client.req_timeout, async {
-            let mut stream = self.mongo_client.find(filter, find_options).await?;
+        let res = tokio::time::timeout(self.db_client.req_timeout, async {
+            let mut stream = self
+                .db_client
+                .collection()
+                .find(filter, find_options)
+                .await?;
             let mut profiles = Vec::with_capacity(wallets.len());
             loop {
                 if profiles.len() == wallets.len() {
@@ -470,8 +491,11 @@ impl UsersManager {
 
         let options = UpdateOptions::builder().upsert(false).build();
 
-        let update_result = tokio::time::timeout(self.mongo_client.req_timeout, async {
-            self.mongo_client.update_one(query, update, options).await
+        let update_result = tokio::time::timeout(self.db_client.req_timeout, async {
+            self.db_client
+                .collection()
+                .update_one(query, update, options)
+                .await
         })
         .await?;
 
@@ -524,8 +548,11 @@ impl UsersManager {
 
         let options = UpdateOptions::builder().upsert(false).build();
 
-        let update_result = tokio::time::timeout(self.mongo_client.req_timeout, async {
-            self.mongo_client.update_one(query, update, options).await
+        let update_result = tokio::time::timeout(self.db_client.req_timeout, async {
+            self.db_client
+                .collection()
+                .update_one(query, update, options)
+                .await
         })
         .await?;
 
@@ -685,11 +712,12 @@ impl UsersManager {
         };
 
         let find_options = FindOptions::builder()
-            .max_time(self.mongo_client.req_timeout)
+            .max_time(self.db_client.req_timeout)
             .build();
 
-        Ok(tokio::time::timeout(self.mongo_client.req_timeout, async {
-            self.mongo_client
+        Ok(tokio::time::timeout(self.db_client.req_timeout, async {
+            self.db_client
+                .collection()
                 .find(filter, find_options)
                 .await?
                 .try_next()

@@ -9,8 +9,9 @@ use tower_http::cors::CorsLayer;
 
 use shared::{
     common::{
-        SBTInfo, SendEmailRequest, SendEmailRequestKind, SessionToken, UpdateSBTKind,
-        UpdateUserSBTRequest, User, UserEmailConfirmationToken, UserProfile, UserProfileStatus,
+        Rewards, SBTInfo, SendEmailRequest, SendEmailRequestKind, SessionToken,
+        UpdateRewardRequest, UpdateSBTKind, UpdateUserSBTRequest, User, UserEmailConfirmationToken,
+        UserProfile, UserProfileStatus,
     },
     rpc_node_client::RpcNodeClient,
 };
@@ -18,7 +19,9 @@ use shared::{
 use crate::{
     config::AppConfig,
     error::AppError,
+    mongo_client::MongoClient,
     quiz::{Quiz, QuizAnswer, QuizQuestion},
+    rewards_manager::RewardsManager,
     sbt::{HumanSBT, NonExpiringSBT, SBTContract, SBTKind, SBT},
     session_manager::SessionManager,
     users_manager::{QuizResult, UsersManager},
@@ -30,6 +33,7 @@ pub struct AppState {
     pub config: AppConfig,
     pub session_manager: SessionManager,
     pub users_manager: Arc<UsersManager>,
+    pub rewards_manager: Arc<RewardsManager>,
     pub quiz: Quiz,
     pub sbt_contracts: Arc<HashMap<SBTKind, SBTContract>>,
 }
@@ -41,6 +45,7 @@ impl AppState {
     pub async fn new(
         config: AppConfig,
         users_manager: Arc<UsersManager>,
+        rewards_manager: Arc<RewardsManager>,
         session_manager: SessionManager,
     ) -> Result<Self, AppError> {
         let rpc_node_client =
@@ -52,6 +57,7 @@ impl AppState {
             },
             session_manager,
             users_manager,
+            rewards_manager,
             sbt_contracts: Arc::new(
                 Self::load_sbt_contracts(&rpc_node_client, &config.sbt_contracts).await?,
             ),
@@ -96,6 +102,15 @@ pub enum TokenQuery {
 #[derive(Debug, Serialize)]
 pub struct TokenResponse {
     pub token: SessionToken,
+}
+
+/// JSON-serialized request passed as POST-data to `/rewards` endpoint
+#[derive(Debug, Deserialize)]
+pub struct RewardsRequest {
+    pub token: SessionToken,
+    pub wallet: Option<Address>,
+    pub start: Option<u64>,
+    pub limit: Option<u64>,
 }
 
 /// JSON-serialized request passed as POST-data to `/users` endpoint
@@ -211,6 +226,7 @@ impl VerifyEmailRequest {
 pub async fn start(
     config: AppConfig,
     users_manager: Arc<UsersManager>,
+    rewards_manager: Arc<RewardsManager>,
     session_manager: SessionManager,
 ) -> Result<(), AppError> {
     let addr = config
@@ -218,7 +234,7 @@ pub async fn start(
         .parse::<std::net::SocketAddr>()
         .expect("Can't parse socket address");
 
-    let state = AppState::new(config, users_manager, session_manager).await?;
+    let state = AppState::new(config, users_manager, rewards_manager, session_manager).await?;
 
     let app = Router::new()
         .route("/token", post(token_route))
@@ -229,6 +245,8 @@ pub async fn start(
         .route("/users", post(users_route))
         .route("/update-user", post(update_user_route))
         .route("/update-user-sbt", post(update_user_sbt_route))
+        .route("/update-reward", post(update_reward_route))
+        .route("/rewards", post(rewards_route))
         .route("/check-email", post(check_email_route))
         .route("/verify-email", post(verify_email_route))
         .route("/quiz", post(quiz_route))
@@ -275,7 +293,7 @@ async fn status_route(
     let res = match state.session_manager.verify_internal_token(&req.token) {
         Ok(_) => state
             .users_manager
-            .mongo_client
+            .db_client
             .server_status()
             .await
             .map(|_| ())
@@ -508,6 +526,82 @@ async fn update_user_sbt_route(
             .map_err(|e| format!("Unable to update user profile. Error: {e}")),
 
         Err(e) => Err(format!("User update request failure. Error: {e}")),
+    };
+
+    tracing::debug!("[/update-user-sbt] Response {res:?}");
+
+    res.map(Json)
+}
+
+/// Route handler to update rewards in MongoDB
+async fn update_reward_route(
+    State(state): State<AppState>,
+    Json(update_req): Json<UpdateRewardRequest>,
+) -> Result<Json<()>, String> {
+    tracing::debug!("[/update-reward] Request {:?}", update_req);
+
+    let res = match state
+        .session_manager
+        .verify_internal_token(&update_req.token)
+        .map(|_| update_req.kind)
+    {
+        Ok(update_req) => state
+            .rewards_manager
+            .update_reward(update_req)
+            .await
+            .map_err(|e| format!("Unable to update user profile. Error: {e}")),
+
+        Err(e) => Err(format!("Update reward request failure. Error: {e}")),
+    };
+
+    tracing::debug!("[/update-user-sbt] Response {res:?}");
+
+    res.map(Json)
+}
+
+/// Route handler to get rewards history from MongoDB
+async fn rewards_route(
+    State(state): State<AppState>,
+    Json(req): Json<RewardsRequest>,
+) -> Result<Json<Vec<Rewards>>, String> {
+    tracing::debug!("[/rewards] Request {:?}", req);
+
+    let res = match state
+        .session_manager
+        .verify_token(&req.token)
+        .map(|wallet| (wallet, req))
+    {
+        // Request all rewards history
+        Ok((
+            requestor,
+            RewardsRequest {
+                wallet: None,
+                start,
+                limit,
+                ..
+            },
+        )) => state
+            .rewards_manager
+            .get_rewards(&requestor, start, limit)
+            .await
+            .map_err(|e| format!("Unable to get rewards. Error: {e}")),
+
+        // Request rewards history related to specific wallet
+        Ok((
+            requestor,
+            RewardsRequest {
+                wallet: Some(wallet),
+                start,
+                limit,
+                ..
+            },
+        )) => state
+            .rewards_manager
+            .get_rewards_by_wallet(&requestor, &wallet, start, limit)
+            .await
+            .map_err(|e| format!("Unable to get rewards. Error: {e}")),
+
+        Err(e) => Err(format!("Rewards request failure. Error: {e}")),
     };
 
     tracing::debug!("[/update-user-sbt] Response {res:?}");

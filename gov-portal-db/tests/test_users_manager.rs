@@ -4,6 +4,7 @@ use assert_matches::assert_matches;
 use web3::types::Address;
 
 use airdao_gov_portal_db::{
+    mongo_client::{MongoClient, MongoConfig},
     quiz::{Quiz, QuizAnswer, QuizConfig},
     users_manager::{EmailVerificationConfig, *},
 };
@@ -11,10 +12,9 @@ use shared::common::{EmailFrom, SBTInfo, User, UserProfile, UserProfileStatus, W
 
 #[tokio::test]
 async fn test_server_status() -> Result<(), anyhow::Error> {
-    let mongo_config = mongo_client::MongoConfig {
+    let mongo_config = MongoConfig {
         url: Some("mongodb://localhost:27017".to_owned()),
         db: "AirDAOGovPortal_IntegrationTest".to_owned(),
-        collection: "Users".to_owned(),
         request_timeout: 10,
     };
 
@@ -35,29 +35,30 @@ async fn test_server_status() -> Result<(), anyhow::Error> {
                 subject: "Complete Your Governor Email Verification".to_string(),
             },
             moderators: vec![],
+            collection: "Users".to_owned(),
         },
     )
     .await?;
 
     users_manager
-        .mongo_client
+        .db_client
         .collection
+        .inner
         .delete_many(bson::doc! {})
         .await?;
 
-    assert!(users_manager.mongo_client.server_status().await.is_ok());
+    assert!(users_manager.db_client.server_status().await.is_ok());
 
-    users_manager.mongo_client.collection.drop().await?;
+    users_manager.db_client.collection.inner.drop().await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_upsert_user() -> Result<(), anyhow::Error> {
-    let mongo_config = mongo_client::MongoConfig {
+    let mongo_config = MongoConfig {
         url: Some("mongodb://localhost:27017".to_owned()),
         db: "AirDAOGovPortal_IntegrationTest".to_owned(),
-        collection: "Users".to_owned(),
         request_timeout: 10,
     };
 
@@ -78,13 +79,15 @@ async fn test_upsert_user() -> Result<(), anyhow::Error> {
                 subject: "Complete Your Governor Email Verification".to_string(),
             },
             moderators: vec![],
+            collection: "Users".to_owned(),
         },
     )
     .await?;
 
     users_manager
-        .mongo_client
+        .db_client
         .collection
+        .inner
         .delete_many(bson::doc! {})
         .await?;
 
@@ -116,17 +119,16 @@ async fn test_upsert_user() -> Result<(), anyhow::Error> {
         .upsert_user(addr_1, "test1@test.com".try_into()?)
         .await?;
 
-    users_manager.mongo_client.collection.drop().await?;
+    users_manager.db_client.collection.inner.drop().await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_users_endpoint() -> Result<(), anyhow::Error> {
-    let mongo_config = mongo_client::MongoConfig {
+    let mongo_config = MongoConfig {
         url: Some("mongodb://localhost:27017".to_owned()),
         db: "AirDAOGovPortal_IntegrationTest".to_owned(),
-        collection: "Users".to_owned(),
         request_timeout: 10,
     };
 
@@ -154,14 +156,16 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
                     subject: "Complete Your Governor Email Verification".to_string(),
                 },
                 moderators,
+                collection: "Users".to_owned(),
             },
         )
         .await?,
     );
 
     users_manager
-        .mongo_client
+        .db_client
         .collection
+        .inner
         .delete_many(bson::doc! {})
         .await?;
 
@@ -184,17 +188,15 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
         Err(error::Error::Unauthorized)
     );
 
-    assert_eq!(
-        users_manager
-            .get_users_by_wallets(&Address::from_low_u64_le(1_234_567), &[])
-            .await
-            .and_then(|users| users
-                .into_iter()
-                .map(|user| Ok(user.profile.and_then(|profile| profile.email)))
-                .collect::<Result<Vec<_>, _>>())
-            .unwrap(),
-        vec![]
-    );
+    assert!(users_manager
+        .get_users_by_wallets(&Address::from_low_u64_le(1_234_567), &[])
+        .await
+        .and_then(|users| users
+            .into_iter()
+            .map(|user| Ok(user.profile.and_then(|profile| profile.email)))
+            .collect::<Result<Vec<_>, _>>())
+        .unwrap()
+        .is_empty(),);
 
     assert_eq!(
         users_manager
@@ -227,17 +229,16 @@ async fn test_users_endpoint() -> Result<(), anyhow::Error> {
         ]
     );
 
-    users_manager.mongo_client.collection.drop().await?;
+    users_manager.db_client.collection.inner.drop().await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_upsert_user_sbt() -> Result<(), anyhow::Error> {
-    let mongo_config = mongo_client::MongoConfig {
+    let mongo_config = MongoConfig {
         url: Some("mongodb://localhost:27017".to_owned()),
         db: "AirDAOGovPortal_IntegrationTest".to_owned(),
-        collection: "Users".to_owned(),
         request_timeout: 10,
     };
 
@@ -258,13 +259,15 @@ async fn test_upsert_user_sbt() -> Result<(), anyhow::Error> {
                 subject: "Complete Your Governor Email Verification".to_string(),
             },
             moderators: vec![],
+            collection: "Users".to_owned(),
         },
     )
     .await?;
 
     users_manager
-        .mongo_client
+        .db_client
         .collection
+        .inner
         .delete_many(bson::doc! {})
         .await?;
 
@@ -309,17 +312,16 @@ async fn test_upsert_user_sbt() -> Result<(), anyhow::Error> {
         )
         .await?;
 
-    users_manager.mongo_client.collection.drop().await?;
+    users_manager.db_client.collection.inner.drop().await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_user_sbt_list_endpoint() -> Result<(), anyhow::Error> {
-    let mongo_config = mongo_client::MongoConfig {
+    let mongo_config = MongoConfig {
         url: Some("mongodb://localhost:27017".to_owned()),
         db: "AirDAOGovPortal_IntegrationTest".to_owned(),
-        collection: "Users".to_owned(),
         request_timeout: 10,
     };
 
@@ -341,14 +343,16 @@ async fn test_user_sbt_list_endpoint() -> Result<(), anyhow::Error> {
                     subject: "Complete Your Governor Email Verification".to_string(),
                 },
                 moderators: vec![],
+                collection: "Users".to_owned(),
             },
         )
         .await?,
     );
 
     users_manager
-        .mongo_client
+        .db_client
         .collection
+        .inner
         .delete_many(bson::doc! {})
         .await?;
 
@@ -427,7 +431,7 @@ async fn test_user_sbt_list_endpoint() -> Result<(), anyhow::Error> {
         ]
     );
 
-    users_manager.mongo_client.collection.drop().await?;
+    users_manager.db_client.collection.inner.drop().await?;
 
     Ok(())
 }
@@ -480,10 +484,9 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
         config: quiz_config,
     };
 
-    let mongo_config = mongo_client::MongoConfig {
+    let mongo_config = MongoConfig {
         url: Some("mongodb://localhost:27017".to_owned()),
         db: "AirDAOGovPortal_IntegrationTest".to_owned(),
-        collection: "Users".to_owned(),
         request_timeout: 10,
     };
 
@@ -504,13 +507,15 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
                 subject: "Complete Your Governor Email Verification".to_string(),
             },
             moderators: vec![],
+            collection: "Users".to_owned(),
         },
     )
     .await?;
 
     users_manager
-        .mongo_client
+        .db_client
         .collection
+        .inner
         .delete_many(bson::doc! {})
         .await?;
 
@@ -585,7 +590,7 @@ async fn test_complete_profile() -> Result<(), anyhow::Error> {
         })
     );
 
-    users_manager.mongo_client.collection.drop().await?;
+    users_manager.db_client.collection.inner.drop().await?;
 
     Ok(())
 }

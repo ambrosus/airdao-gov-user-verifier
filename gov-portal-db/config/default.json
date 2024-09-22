@@ -29,12 +29,16 @@
             },
             "subject": "Complete Your Governor Email Verification"
         },
-        "moderators": []
+        "moderators": [],
+        "collection": "Users"
+    },
+    "rewardsManager": {
+        "moderators": [],
+        "collection": "Rewards"
     },
     "mongo": {
         "url": null,
         "db": "AirDAOGovPortal",
-        "collection": "Users",
         "requestTimeout": 10
     },
     "quiz": {
