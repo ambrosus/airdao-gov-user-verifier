@@ -53,7 +53,7 @@ async fn test_rewards_contract() -> Result<(), anyhow::Error> {
 
     let rewards_contract = deploy_upgradeable_contract(
         web3_client.eth(),
-        include_str!("../../artifacts/RewardDistributionContract.json"),
+        include_str!("../../artifacts/RewardDistribution.json"),
         (),
         &owner_secret,
     )

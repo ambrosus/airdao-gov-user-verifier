@@ -74,5 +74,5 @@ clap = { workspace = true }
 assert_matches = { workspace = true }
 
 [features]
-default = ["enable-integration-tests"]
+default = []
 enable-integration-tests = ["shared/enable-integration-tests"]
