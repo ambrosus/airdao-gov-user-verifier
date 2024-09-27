@@ -37,7 +37,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<GovEventNotification>();
 
-    let listener = EventListener::new(config, provider, indexer_state_redis_cache.block_number)?;
+    let listener = EventListener::new(
+        config.contracts,
+        provider,
+        indexer_state_redis_cache.block_number,
+    )?;
 
     tokio::spawn(async move {
         let idle_interval = std::time::Duration::from_secs(10);
@@ -66,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 block_number = event_notification.block_number
             );
 
-            let result = match event_notification.event {
+            let result = match &event_notification.event {
                 GovEvent::SBTMint(wallet) => {
                     let sbt = SBTInfo {
                         name: event_notification.contract_name.clone(),
@@ -74,26 +78,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         issued_at_block: event_notification.block_number,
                     };
 
-                    gov_db_provider.upsert_user_sbt(wallet, sbt).await
+                    gov_db_provider.upsert_user_sbt(*wallet, sbt).await
                 }
                 GovEvent::SBTBurn(wallet) => {
                     gov_db_provider
-                        .remove_user_sbt(wallet, event_notification.contract_address)
+                        .remove_user_sbt(*wallet, event_notification.contract_address)
                         .await
                 }
-                GovEvent::Reward(wallet, amount, timestamp) => {
+                GovEvent::Reward(event) => {
                     gov_db_provider
                         .insert_reward(RewardInfo {
-                            wallet,
                             id: event_notification.block_number,
-                            amount,
-                            timestamp: timestamp.as_u64(),
+                            grantor: event.grantor,
+                            wallet: event.wallet,
+                            amount: event.amount,
+                            timestamp: event.timestamp.as_u64(),
+                            event_name: event.name.clone(),
+                            region: event.region.clone(),
+                            community: Some(event.community.clone()).filter(|v| !v.is_empty()),
+                            pseudo: Some(event.pseudo.clone()).filter(|v| !v.is_empty()),
                             status: RewardStatus::Granted,
                         })
                         .await
                 }
-                GovEvent::ClaimReward(wallet, id) => gov_db_provider.claim_reward(wallet, id).await,
-                GovEvent::RevertReward(id) => gov_db_provider.revert_reward(id).await,
+                GovEvent::ClaimReward(wallet, id) => {
+                    gov_db_provider.claim_reward(*wallet, *id).await
+                }
+                GovEvent::RevertReward(id) => gov_db_provider.revert_reward(*id).await,
             };
 
             if let Ok(axum::Json(())) = result {

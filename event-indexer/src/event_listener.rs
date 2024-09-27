@@ -12,8 +12,6 @@ use futures_util::StreamExt;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
 
-use crate::config::AppConfig;
-
 const ERR_UNHANDLED_EVENT: &str = "Unhandled event";
 const HUMAN_SBT_MINT_EVENT_SIGNATURE: ethereum_types::H256 =
     shared::event_signature!("SBTMint(address,uint256,uint256)");
@@ -21,23 +19,21 @@ const NON_EXP_SBT_MINT_EVENT_SIGNATURE: ethereum_types::H256 =
     shared::event_signature!("SBTMint(address)");
 const SBT_BURN_EVENT_SIGNATURE: ethereum_types::H256 = shared::event_signature!("SBTBurn(address)");
 const REWARD_EVENT_SIGNATURE: ethereum_types::H256 =
-    shared::event_signature!("Reward(address,amount,timestamp)");
+    shared::event_signature!("Reward(address,address,uint256,uint256,string,string,string,string)");
 const CLAIM_REWARD_EVENT_SIGNATURE: ethereum_types::H256 =
-    shared::event_signature!("ClaimReward(address,id,amount)");
+    shared::event_signature!("ClaimReward(address,uint256,uint256)");
 const REVERT_REWARD_EVENT_SIGNATURE: ethereum_types::H256 =
-    shared::event_signature!("RevertReward(id,total)");
+    shared::event_signature!("RevertReward(uint256,uint256)");
 
 pub struct EventListener<T: PubsubClient> {
     provider: Arc<Provider<T>>,
     block_number: u64,
     sbt_name_by_addr: HashMap<Address, String>,
-    config: Arc<AppConfig>,
+    contracts: HashMap<String, Address>,
 }
 
 #[derive(Clone)]
 struct EventLoopContext {
-    #[allow(unused)]
-    config: Arc<AppConfig>,
     tx: mpsc::UnboundedSender<GovEventNotification>,
     block: u64,
 }
@@ -135,9 +131,16 @@ impl std::fmt::Display for SBTBurnEvent {
 #[ethevent(name = "Reward")]
 pub struct RewardEvent {
     #[ethevent(indexed)]
+    pub grantor: Address,
+    #[ethevent(indexed)]
     pub wallet: Address,
     pub amount: U256,
     pub timestamp: U256,
+    #[ethevent(name = "eventName")]
+    pub name: String,
+    pub region: String,
+    pub community: String,
+    pub pseudo: String,
 }
 
 impl std::fmt::Display for RewardEvent {
@@ -180,7 +183,7 @@ impl std::fmt::Display for RevertRewardEvent {
 pub enum GovEvent {
     SBTMint(Address),
     SBTBurn(Address),
-    Reward(Address, U256, U256),
+    Reward(RewardEvent),
     ClaimReward(Address, u64),
     RevertReward(u64),
 }
@@ -234,8 +237,7 @@ impl EthEvent for GovEvent {
 
             // Reward distribution events
             Some(topic) if topic.eq(&REWARD_EVENT_SIGNATURE) => {
-                <RewardEvent as EthLogDecode>::decode_log(log)
-                    .map(|event| Self::Reward(event.wallet, event.amount, event.timestamp))
+                <RewardEvent as EthLogDecode>::decode_log(log).map(Self::Reward)
             }
             Some(topic) if topic.eq(&CLAIM_REWARD_EVENT_SIGNATURE) => {
                 <ClaimRewardEvent as EthLogDecode>::decode_log(log)
@@ -265,19 +267,15 @@ impl EthEvent for GovEvent {
 
 impl<T: PubsubClient> EventListener<T> {
     pub fn new(
-        config: AppConfig,
+        contracts: HashMap<String, Address>,
         provider: Arc<Provider<T>>,
         block_number: u64,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             provider,
             block_number,
-            sbt_name_by_addr: config
-                .contracts
-                .iter()
-                .map(|(k, v)| (*v, k.clone()))
-                .collect(),
-            config: Arc::new(config),
+            sbt_name_by_addr: contracts.iter().map(|(k, v)| (*v, k.clone())).collect(),
+            contracts,
         })
     }
 
@@ -286,7 +284,6 @@ impl<T: PubsubClient> EventListener<T> {
         tx: mpsc::UnboundedSender<GovEventNotification>,
     ) -> anyhow::Result<()> {
         let mut context = EventLoopContext {
-            config: self.config.clone(),
             tx,
             block: self.block_number,
         };
@@ -306,7 +303,7 @@ impl<T: PubsubClient> EventListener<T> {
             };
 
             let mut event: Event<Arc<Provider<T>>, Provider<T>, _> = EthEvent::new(
-                Filter::new().address(self.config.contracts.values().copied().collect::<Vec<_>>()),
+                Filter::new().address(self.contracts.values().copied().collect::<Vec<_>>()),
                 self.provider.clone(),
             )
             .from_block(context.block);

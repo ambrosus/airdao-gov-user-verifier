@@ -11,7 +11,8 @@ use web3::{
     types::TransactionRequest,
 };
 
-use airdao_gov_user_verifier::{signer, tests::*};
+use airdao_gov_user_verifier::signer;
+use shared::tests::*;
 
 const ERR_SBT_EXPIRED_OR_NOT_EXIST: &str = "Error: VM Exception while processing transaction: reverted with reason string 'SBT expired or not exist'";
 const ERR_SBT_ALREADY_EXIST: &str = "Error: VM Exception while processing transaction: reverted with reason string 'This kind of SBT already exist'";

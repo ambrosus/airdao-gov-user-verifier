@@ -61,7 +61,7 @@ pub async fn deploy_upgradeable_contract<T: web3::Transport, P: Tokenize>(
 
     let proxy_admin_contract = deploy_contract(
         eth.clone(),
-        include_str!("../../tests/artifacts/ProxyAdmin.json"),
+        include_str!("../../../artifacts/ProxyAdmin.json"),
         caller.address(),
         caller_secret,
     )
@@ -74,7 +74,7 @@ pub async fn deploy_upgradeable_contract<T: web3::Transport, P: Tokenize>(
 
     let proxy_contract = deploy_contract(
         eth.clone(),
-        include_str!("../../tests/artifacts/TransparentUpgradeableProxy.json"),
+        include_str!("../../../artifacts/TransparentUpgradeableProxy.json"),
         (
             impl_contract.address(),
             proxy_admin_contract.address(),
@@ -108,6 +108,9 @@ pub async fn deploy_contract<T: web3::Transport, P: Tokenize>(
 
     Contract::deploy(eth, abi.as_bytes())?
         .confirmations(0)
+        // .options(Options {
+        //     ..Default::default()
+        // })
         .execute(bytecode.to_string(), params, caller.address())
         .await
         .map_err(anyhow::Error::from)
@@ -218,4 +221,10 @@ pub async fn hardhat_set_coinbase<T: web3::Transport>(
     http.send(set_coinbase_req_id, set_coinbase_call)
         .await
         .map_err(anyhow::Error::from)
+}
+
+pub fn transaction_cost(receipt: &TransactionReceipt) -> Option<U256> {
+    receipt
+        .effective_gas_price
+        .and_then(|gas_price| gas_price.checked_mul(receipt.cumulative_gas_used))
 }

@@ -37,31 +37,42 @@ async fn test_update_reward() -> Result<(), anyhow::Error> {
 
     let addr_1 = Address::from_low_u64_le(1);
     let addr_2 = Address::from_low_u64_le(2);
+    let addr_grantor = Address::from_low_u64_le(11111111);
 
     rewards_manager
         .update_reward(UpdateRewardKind::Grant(RewardInfo {
-            wallet: addr_1,
             id: 1,
+            grantor: addr_grantor,
+            wallet: addr_1,
             amount: U256::one(),
             timestamp: Utc::now().timestamp() as u64,
+            event_name: "Rewards".to_owned(),
+            region: "NA".to_owned(),
+            community: None,
+            pseudo: None,
             status: RewardStatus::Granted,
         }))
         .await?;
 
     rewards_manager
         .update_reward(UpdateRewardKind::Grant(RewardInfo {
-            wallet: addr_2,
             id: 2,
+            grantor: addr_grantor,
+            wallet: addr_2,
             amount: U256::one(),
             timestamp: Utc::now().timestamp() as u64,
+            event_name: "Rewards".to_owned(),
+            region: "NA".to_owned(),
+            community: None,
+            pseudo: None,
             status: RewardStatus::Granted,
         }))
         .await?;
 
     rewards_manager
         .update_reward(UpdateRewardKind::Claim {
-            wallet: addr_1,
             id: 1,
+            wallet: addr_1,
         })
         .await?;
 
@@ -107,6 +118,7 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
         .await?;
 
     let now = Utc::now().timestamp() as u64;
+    let addr_grantor = Address::from_low_u64_le(11111111);
 
     futures_util::future::join_all((1u64..=29).map(|i| {
         let users_manager = rewards_manager.clone();
@@ -115,10 +127,15 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
             let wallet = Address::from_low_u64_le(i / 3 + 1);
             users_manager
                 .update_reward(UpdateRewardKind::Grant(RewardInfo {
-                    wallet,
                     id: i % 10 + 1,
+                    grantor: addr_grantor,
+                    wallet,
                     amount: U256::from(i * 1_000_000_000),
                     timestamp: now + i % 10 + 1,
+                    event_name: "Rewards".to_owned(),
+                    region: "NA".to_owned(),
+                    community: None,
+                    pseudo: None,
                     status: RewardStatus::Granted,
                 }))
                 .await
@@ -181,16 +198,26 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
         vec![
             RewardInfo {
                 id: 2,
+                grantor: Address::from_low_u64_le(11111111),
                 wallet: Address::from_low_u64_le(1),
                 amount: U256::from(1_000_000_000),
                 timestamp: now + 2,
+                event_name: "Rewards".to_owned(),
+                region: "NA".to_owned(),
+                community: None,
+                pseudo: None,
                 status: RewardStatus::Granted,
             },
             RewardInfo {
                 id: 3,
+                grantor: Address::from_low_u64_le(11111111),
                 wallet: Address::from_low_u64_le(1),
                 amount: U256::from(2_000_000_000),
                 timestamp: now + 3,
+                event_name: "Rewards".to_owned(),
+                region: "NA".to_owned(),
+                community: None,
+                pseudo: None,
                 status: RewardStatus::Granted,
             }
         ]

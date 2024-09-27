@@ -132,10 +132,17 @@ pub struct Rewards {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RewardInfo {
-    pub wallet: Address,
     pub id: u64,
+    pub grantor: Address,
+    pub wallet: Address,
     pub amount: U256,
     pub timestamp: u64,
+    pub event_name: String,
+    pub region: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub community: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pseudo: Option<String>,
     #[serde(default, skip_serializing_if = "RewardStatus::is_granted")]
     pub status: RewardStatus,
 }
@@ -162,8 +169,15 @@ pub struct RewardsDbEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RewardDbEntry {
+    pub grantor: Address,
     pub amount: U256,
     pub timestamp: u64,
+    pub event_name: String,
+    pub region: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub community: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pseudo: Option<String>,
     #[serde(default, skip_serializing_if = "RewardStatus::is_granted")]
     pub status: RewardStatus,
 }
@@ -840,9 +854,14 @@ impl From<(u64, Address, RewardDbEntry)> for RewardInfo {
     fn from((id, wallet, value): (u64, Address, RewardDbEntry)) -> Self {
         Self {
             id,
+            grantor: value.grantor,
             wallet,
             amount: value.amount,
             timestamp: value.timestamp,
+            event_name: value.event_name,
+            region: value.region,
+            community: value.community,
+            pseudo: value.pseudo,
             status: value.status,
         }
     }
@@ -854,8 +873,13 @@ impl From<RewardInfo> for (u64, Address, RewardDbEntry) {
             value.id,
             value.wallet,
             RewardDbEntry {
+                grantor: value.grantor,
                 amount: value.amount,
                 timestamp: value.timestamp,
+                event_name: value.event_name,
+                region: value.region,
+                community: value.community,
+                pseudo: value.pseudo,
                 status: value.status,
             },
         )
