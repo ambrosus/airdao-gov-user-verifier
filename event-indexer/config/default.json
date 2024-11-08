@@ -1,6 +1,7 @@
 {
     "redis": "redis://localhost:6379",
     "rpcNode": "wss://network.ambrosus.io/ws",
+    "blockNumber": 29404037,
     "db": {
         "url": null,
         "requestTimeout": 10,

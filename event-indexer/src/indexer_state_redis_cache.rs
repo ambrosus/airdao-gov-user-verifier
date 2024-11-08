@@ -8,14 +8,15 @@ pub struct IndexerStateRedisCache {
 }
 
 impl IndexerStateRedisCache {
-    pub async fn new(chain_id: u64, redis_url: &str) -> anyhow::Result<Self> {
+    pub async fn new(
+        chain_id: u64,
+        redis_url: &str,
+        mut block_number: u64,
+    ) -> anyhow::Result<Self> {
         // Initialize connection to redis
         let mut connection_manager = redis::Client::open(redis_url)?
             .get_connection_manager()
             .await?;
-
-        // TODO: make start block configurable
-        let mut block_number = 29404037;
 
         if 0 != redis::cmd("EXISTS")
             .arg(format!("indexer.{chain_id}.block_number"))
@@ -60,7 +61,7 @@ mod test {
 
     #[tokio::test]
     async fn test_indexer_state() -> Result<(), anyhow::Error> {
-        let mut state_cache = IndexerStateRedisCache::new(1, "redis://localhost:6379/").await?;
+        let mut state_cache = IndexerStateRedisCache::new(1, "redis://localhost:6379/", 0).await?;
 
         state_cache.store_block_number(1).await
     }

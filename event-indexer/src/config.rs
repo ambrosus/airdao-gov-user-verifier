@@ -9,6 +9,7 @@ use crate::gov_db_provider::GovDbConfig;
 pub struct AppConfig {
     pub redis: String,
     pub rpc_node: String,
+    pub block_number: u64,
     /// Gov DB provider configuration
     pub db: GovDbConfig,
     pub contracts: HashMap<String, Address>,

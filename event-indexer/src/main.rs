@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chain_id = provider.get_chainid().await?.as_u64();
 
     let mut indexer_state_redis_cache =
-        IndexerStateRedisCache::new(chain_id, &config.redis).await?;
+        IndexerStateRedisCache::new(chain_id, &config.redis, config.block_number).await?;
 
     let mut gov_db_provider = GovDbProvider::new(config.db.clone())?;
 
