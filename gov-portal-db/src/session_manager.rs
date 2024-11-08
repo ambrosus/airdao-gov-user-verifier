@@ -1,5 +1,6 @@
 use chrono::Utc;
 use ethereum_types::Address;
+use k256::ecdsa::SigningKey;
 use serde::Deserialize;
 use shared::common::{RawSessionToken, SessionToken, SessionTokenKind, WalletSignedMessage};
 use std::str::FromStr;
@@ -45,6 +46,30 @@ impl SessionManager {
                 )
             })
             .map_err(|e| anyhow::Error::msg(format!("Failed to generate JWT token. Error: {}", e)))
+    }
+
+    /// Acquires a session JWT token to get an access to MongoDB for an eligible user who has proven
+    /// his access to a wallet by signing a messgae
+    pub fn acquire_token_with_signing_key(
+        &self,
+        signing_key: SigningKey,
+    ) -> Result<SessionToken, anyhow::Error> {
+        let wallet = shared::utils::get_eth_address(
+            signing_key
+                .verifying_key()
+                .to_encoded_point(false)
+                .as_bytes(),
+        );
+
+        SessionToken::new(
+            RawSessionToken {
+                kind: SessionTokenKind::Wallet {
+                    checksum_wallet: shared::utils::get_checksum_address(&wallet),
+                },
+                expires_at: (Utc::now() + self.config.lifetime).timestamp_millis() as u64,
+            },
+            self.config.secret.as_bytes(),
+        )
     }
 
     /// Acquires a session JWT token to get an access to MongoDB for internal usage

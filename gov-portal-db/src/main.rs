@@ -9,6 +9,7 @@ mod session_manager;
 mod users_manager;
 
 use clap::{Args, Parser, Subcommand};
+use serde::de::{value::StrDeserializer, IntoDeserializer};
 use std::{sync::Arc, time::Duration};
 
 use rewards_manager::RewardsManager;
@@ -34,12 +35,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match &cli.command {
         Some(Commands::GenToken(arg)) => {
             let lifetime = arg.lifetime.unwrap_or(ONE_YEAR);
-
-            println!(
-                "{}",
-                session_manager
-                    .acquire_internal_token_with_lifetime(Duration::from_secs(lifetime))?
-            );
+            let token = match arg.private_key.as_deref() {
+                Some(private_key) => {
+                    let signing_key = utils::de_secp256k1_signing_key::<
+                        '_,
+                        StrDeserializer<serde_json::Error>,
+                    >(private_key.into_deserializer())?;
+                    session_manager.acquire_token_with_signing_key(signing_key)?
+                }
+                None => session_manager
+                    .acquire_internal_token_with_lifetime(Duration::from_secs(lifetime))?,
+            };
+            println!("{token}");
             return Ok(());
         }
         None => (),
@@ -75,4 +82,6 @@ struct GetTokenArgs {
     /// Lifetime in seconds for an access token (defaults to 1 year)
     #[arg(short, long)]
     lifetime: Option<u64>,
+    #[arg(short, long)]
+    private_key: Option<String>,
 }
