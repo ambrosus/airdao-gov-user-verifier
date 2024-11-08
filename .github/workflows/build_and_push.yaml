@@ -7,7 +7,9 @@ on:
       - og-token-support
       - server-node-operator-sbt
       - add-sbt-report
-      - event-indexer
+      - event-indexer  
+    tags:
+      - v*
 
 jobs:
   build_and_publish_db:
