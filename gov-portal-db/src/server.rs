@@ -111,6 +111,9 @@ pub struct RewardsRequest {
     pub wallet: Option<Address>,
     pub start: Option<u64>,
     pub limit: Option<u64>,
+    pub from: Option<u64>,
+    pub to: Option<u64>,
+    pub community: Option<String>,
 }
 
 /// JSON-serialized request passed as POST-data to `/users` endpoint
@@ -578,11 +581,14 @@ async fn rewards_route(
                 wallet: None,
                 start,
                 limit,
+                from,
+                to,
+                community,
                 ..
             },
         )) => state
             .rewards_manager
-            .get_rewards(&requestor, start, limit)
+            .get_rewards(&requestor, start, limit, from, to, community)
             .await
             .map_err(|e| format!("Unable to get rewards. Error: {e}")),
 
@@ -593,11 +599,14 @@ async fn rewards_route(
                 wallet: Some(wallet),
                 start,
                 limit,
+                from,
+                to,
+                community,
                 ..
             },
         )) => state
             .rewards_manager
-            .get_rewards_by_wallet(&requestor, &wallet, start, limit)
+            .get_rewards_by_wallet(&requestor, &wallet, start, limit, from, to, community)
             .await
             .map_err(|e| format!("Unable to get rewards. Error: {e}")),
 

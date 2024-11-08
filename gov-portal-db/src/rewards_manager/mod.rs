@@ -110,6 +110,9 @@ impl RewardsManager {
         requestor: &Address,
         start: Option<u64>,
         limit: Option<u64>,
+        from: Option<u64>,
+        to: Option<u64>,
+        community: Option<String>,
     ) -> Result<Vec<Rewards>, error::Error> {
         let start = start.unwrap_or_default();
         let limit = limit
@@ -125,6 +128,77 @@ impl RewardsManager {
             return Err(error::Error::Unauthorized);
         }
 
+        let mut in_and_cond_doc = doc! {
+            "$and": []
+        };
+
+        let mut cond = doc! {};
+
+        if let Some(community) = community {
+            cond.insert("$eq", bson::to_bson(&["$$wallet.v.community", &community])?);
+
+            in_and_cond_doc.get_array_mut("$and")?.push(
+                doc! {
+                    "$gt": [{ "$size": "$$entries" }, 0]
+                }
+                .into(),
+            );
+        }
+
+        if from.is_some() || to.is_some() {
+            if let Some(from) = from {
+                in_and_cond_doc.get_array_mut("$and")?.push(
+                    doc! {
+                        "$gte": ["$$timestamp", bson::to_bson(&from)?]
+                    }
+                    .into(),
+                );
+            }
+
+            if let Some(to) = to {
+                in_and_cond_doc.get_array_mut("$and")?.push(
+                    doc! {
+                        "$lte": ["$$timestamp", bson::to_bson(&to)?]
+                    }
+                    .into(),
+                );
+            }
+        }
+
+        let filter = doc! {
+            "$expr":{
+                "$let":{
+                    "vars":{
+                        "entries":{
+                            "$filter":{
+                                "input":{
+                                    "$objectToArray":"$wallets"
+                                },
+                                "as":"wallet",
+                                "cond": cond
+                            }
+                        }
+                    },
+                    "in":{
+                        "$let": {
+                            "vars": {
+                                "timestamp":{
+                                    "$arrayElemAt":[{
+                                        "$map":{
+                                            "input":"$$entries",
+                                            "as":"entry",
+                                            "in":"$$entry.v.timestamp"
+                                        }
+                                    },0]
+                                }
+                            },
+                            "in": in_and_cond_doc
+                        }
+                    }
+                }
+            }
+        };
+
         let find_options = FindOptions::builder()
             .max_time(self.db_client.req_timeout)
             .skip(start)
@@ -136,7 +210,7 @@ impl RewardsManager {
             let mut stream = self
                 .db_client
                 .collection()
-                .find(doc! {}, find_options)
+                .find(filter, find_options)
                 .await?;
             while let Ok(Some(doc)) = stream.try_next().await {
                 let rewards =
@@ -177,12 +251,16 @@ impl RewardsManager {
     }
 
     /// Searches for multiple user profiles within MongoDB by provided EVM-like address [`Address`] list and returns [`Vec<UserProfile>`]
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_rewards_by_wallet(
         &self,
         requestor: &Address,
         wallet: &Address,
         start: Option<u64>,
         limit: Option<u64>,
+        from: Option<u64>,
+        to: Option<u64>,
+        community: Option<String>,
     ) -> Result<Vec<Rewards>, error::Error> {
         let start = start.unwrap_or_default();
         let limit = limit
@@ -201,8 +279,76 @@ impl RewardsManager {
             return Err(error::Error::Unauthorized);
         }
 
+        let mut in_and_cond_doc = doc! {
+            "$and": []
+        };
+
+        let mut cond = doc! {};
+
+        if let Some(community) = community {
+            cond.insert("$eq", bson::to_bson(&["$$wallet.v.community", &community])?);
+
+            in_and_cond_doc.get_array_mut("$and")?.push(
+                doc! {
+                    "$gt": [{ "$size": "$$entries" }, 0]
+                }
+                .into(),
+            );
+        }
+
+        if from.is_some() || to.is_some() {
+            if let Some(from) = from {
+                in_and_cond_doc.get_array_mut("$and")?.push(
+                    doc! {
+                        "$gte": ["$$timestamp", bson::to_bson(&from)?]
+                    }
+                    .into(),
+                );
+            }
+
+            if let Some(to) = to {
+                in_and_cond_doc.get_array_mut("$and")?.push(
+                    doc! {
+                        "$lt": ["$$timestamp", bson::to_bson(&to)?]
+                    }
+                    .into(),
+                );
+            }
+        }
+
         let filter = doc! {
-            format!("wallets.0x{}", hex::encode(wallet)): { "$exists": true }
+            format!("wallets.0x{}", hex::encode(wallet)): { "$exists": true },
+            "$expr":{
+                "$let":{
+                    "vars":{
+                        "entries":{
+                            "$filter":{
+                                "input":{
+                                    "$objectToArray":"$wallets"
+                                },
+                                "as":"wallet",
+                                "cond": cond
+                            }
+                        }
+                    },
+                    "in":{
+                        "$let": {
+                            "vars": {
+                                "timestamp":{
+                                    "$arrayElemAt":[{
+                                        "$map":{
+                                            "input":"$$entries",
+                                            "as":"entry",
+                                            "in":"$$entry.v.timestamp"
+                                        }
+                                    },0]
+                                }
+                            },
+                            "in": in_and_cond_doc
+                        }
+                    }
+                }
+            }
         };
 
         let find_options = FindOptions::builder()
