@@ -7,8 +7,8 @@
             "issuerOGSBT": null,
             "issuerSNOSBT": null
         },
-        "requestLifetime": 60000,
-        "sbtLifetime": 3153600000000,
+        "requestLifetime": 60,
+        "sbtLifetime": 3153600000,
         "ogEligibleBefore": 1577836800
     },
     "fractal": {
@@ -23,7 +23,7 @@
     },
     "rpcNode": {
         "url": "https://network.ambrosus.io",
-        "requestTimeout": 10000
+        "requestTimeout": 10
     },
     "serverNodesManager": {
         "contract": "0x275820E2F6E4d30502fDf9CE2C165cCDC0cd331C",

@@ -7,10 +7,13 @@ use ethers::{
     providers::Provider,
     types::Filter,
 };
-use ethers_providers::PubsubClient;
+use ethers_providers::{Middleware, PubsubClient};
 use futures_util::StreamExt;
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::mpsc;
+use tokio::{
+    sync::mpsc,
+    time::{sleep_until, Instant},
+};
 
 const ERR_UNHANDLED_EVENT: &str = "Unhandled event";
 const HUMAN_SBT_MINT_EVENT_SIGNATURE: ethereum_types::H256 =
@@ -288,6 +291,7 @@ impl<T: PubsubClient> EventListener<T> {
             block: self.block_number,
         };
 
+        let idle_interval = std::time::Duration::from_secs(10);
         let mut error = None;
 
         loop {
@@ -311,24 +315,69 @@ impl<T: PubsubClient> EventListener<T> {
             // Reset filter by topics created by [`EthEvent::new`] call above
             event.filter.topics = Default::default();
 
-            let stream_res = event.subscribe_with_meta().await;
+            let mut blocks_stream = match self.provider.subscribe_blocks().await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    error = Some(EventLoopError::Unrecoverable(anyhow::Error::msg(format!(
+                        "Failed to subscribe blocks: {e:?}",
+                    ))));
+                    continue;
+                }
+            };
 
-            let Ok(mut stream) = stream_res else {
-                error = Some(EventLoopError::Recoverable(anyhow::Error::msg(format!(
-                    "Failed to subscribe government events: {:?}",
-                    stream_res.err()
-                ))));
-                continue;
+            let mut events_stream = match event.subscribe_with_meta().await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    error = Some(EventLoopError::Unrecoverable(anyhow::Error::msg(format!(
+                        "Failed to subscribe government events: {e:?}",
+                    ))));
+                    continue;
+                }
             };
 
             loop {
+                let idle_until = Instant::now() + idle_interval;
+
                 tracing::trace!(block = %context.block, "Wait for next government event...");
 
-                let Some(event) = stream.next().await else {
-                    error = Some(EventLoopError::Recoverable(anyhow!(
-                        "Subscription to SBT events ended."
-                    )));
-                    break;
+                let event = tokio::select! {
+                    event = events_stream.next() => {
+                        match event {
+                            Some(event) => event,
+                            None => {
+                                error = Some(EventLoopError::Recoverable(anyhow!(
+                                    "Subscription to government events ended"
+                                )));
+                                break;
+                            }
+                        }
+                    }
+                    block = blocks_stream.next() => {
+                        match block {
+                            Some(block) => {
+                                tracing::debug!("New block {:?}", block.number);
+                                continue;
+                            },
+                            None => {
+                                error = Some(EventLoopError::Recoverable(anyhow!(
+                                    "Subscription to blocks ended"
+                                )));
+                                break;
+                            }
+                        }
+                    }
+                    _ = context.tx.closed() => {
+                        error = Some(EventLoopError::Unrecoverable(anyhow!(
+                            "Event notification channel has been dropped"
+                        )));
+                        break;
+                    }
+                    _ = sleep_until(idle_until) => {
+                        error = Some(EventLoopError::Recoverable(anyhow!(
+                            "No blockchain events within {}s", idle_interval.as_secs(),
+                        )));
+                        break;
+                    }
                 };
 
                 match event {
