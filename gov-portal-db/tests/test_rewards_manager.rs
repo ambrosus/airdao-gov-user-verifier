@@ -165,6 +165,14 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
         Err(error::Error::Unauthorized)
     );
 
+    assert_eq!(
+        rewards_manager
+            .count_rewards(&Address::from_low_u64_le(1_234_567), None, None, None)
+            .await
+            .unwrap(),
+        10
+    );
+
     assert!(rewards_manager
         .get_rewards_by_wallet(
             &Address::from_low_u64_le(1),
@@ -463,6 +471,18 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
             .len(),
         1
     );
+
+    let total = rewards_manager
+        .count_rewards_by_wallet(
+            &Address::from_low_u64_le(1),
+            &Address::from_low_u64_le(1),
+            Some(now + 2 * 4 * 60 * 60 + 1),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(total, 58);
 
     assert_eq!(
         rewards_manager
