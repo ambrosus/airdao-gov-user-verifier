@@ -1,7 +1,10 @@
 use async_trait::async_trait;
 use mongodb::{
     bson::Document,
-    options::{ClientOptions, FindOptions, InsertOneOptions, UpdateModifications, UpdateOptions},
+    options::{
+        ClientOptions, CountOptions, FindOptions, InsertOneOptions, UpdateModifications,
+        UpdateOptions,
+    },
     results::{InsertOneResult, UpdateResult},
     Client, Collection, Cursor, Database,
 };
@@ -44,6 +47,17 @@ impl MongoCollection {
         self.inner
             .find(filter.into())
             .with_options(find_options)
+            .await
+    }
+    /// Query count request from collection by filter
+    pub async fn count(
+        &self,
+        filter: impl Into<Document>,
+        count_options: impl Into<Option<CountOptions>>,
+    ) -> Result<u64, mongodb::error::Error> {
+        self.inner
+            .count_documents(filter.into())
+            .with_options(count_options)
             .await
     }
 

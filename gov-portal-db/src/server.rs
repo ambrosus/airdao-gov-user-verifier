@@ -1,7 +1,7 @@
 use axum::{extract::State, routing::post, Json, Router};
 use chrono::{DateTime, Utc};
 use ethereum_types::Address;
-use futures_util::{future, FutureExt};
+use futures_util::{future, FutureExt, TryFutureExt};
 use jsonwebtoken::TokenData;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
@@ -106,6 +106,7 @@ pub struct TokenResponse {
 
 /// JSON-serialized request passed as POST-data to `/rewards` endpoint
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RewardsRequest {
     pub token: SessionToken,
     pub wallet: Option<Address>,
@@ -114,6 +115,13 @@ pub struct RewardsRequest {
     pub from: Option<u64>,
     pub to: Option<u64>,
     pub community: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RewardsResponse {
+    pub data: Vec<Rewards>,
+    pub total: u64,
 }
 
 /// JSON-serialized request passed as POST-data to `/users` endpoint
@@ -566,7 +574,7 @@ async fn update_reward_route(
 async fn rewards_route(
     State(state): State<AppState>,
     Json(req): Json<RewardsRequest>,
-) -> Result<Json<Vec<Rewards>>, String> {
+) -> Result<Json<RewardsResponse>, String> {
     tracing::debug!("[/rewards] Request {:?}", req);
 
     let res = match state
@@ -588,7 +596,18 @@ async fn rewards_route(
             },
         )) => state
             .rewards_manager
-            .get_rewards(&requestor, start, limit, from, to, community)
+            .count_rewards(&requestor, from, to, community.as_deref())
+            .and_then(|total| {
+                let manager = Arc::clone(&state.rewards_manager);
+                let community = community.as_deref();
+
+                async move {
+                    manager
+                        .get_rewards(&requestor, start, limit, from, to, community)
+                        .await
+                        .map(|data| RewardsResponse { data, total })
+                }
+            })
             .await
             .map_err(|e| format!("Unable to get rewards. Error: {e}")),
 
@@ -606,10 +625,22 @@ async fn rewards_route(
             },
         )) => state
             .rewards_manager
-            .get_rewards_by_wallet(&requestor, &wallet, start, limit, from, to, community)
+            .count_rewards_by_wallet(&requestor, &wallet, from, to, community.as_deref())
+            .and_then(|total| {
+                let manager = Arc::clone(&state.rewards_manager);
+                let community = community.as_deref();
+
+                async move {
+                    manager
+                        .get_rewards_by_wallet(
+                            &requestor, &wallet, start, limit, from, to, community,
+                        )
+                        .await
+                        .map(|data| RewardsResponse { data, total })
+                }
+            })
             .await
             .map_err(|e| format!("Unable to get rewards. Error: {e}")),
-
         Err(e) => Err(format!("Rewards request failure. Error: {e}")),
     };
 

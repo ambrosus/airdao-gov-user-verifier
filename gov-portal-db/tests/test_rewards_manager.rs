@@ -247,7 +247,7 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
             None,
             None,
             None,
-            Some("3".into()),
+            Some("3"),
         )
         .await
         .unwrap()
@@ -490,7 +490,7 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
                 None,
                 Some(now + 2 * 4 * 60 * 60 + 1),
                 None,
-                Some("0".into()),
+                Some("0"),
             )
             .await
             .unwrap()
@@ -507,7 +507,7 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
                 None,
                 Some(now + 2 * 4 * 60 * 60 + 1),
                 None,
-                Some("1".into()),
+                Some("1"),
             )
             .await
             .unwrap()
