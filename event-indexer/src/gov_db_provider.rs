@@ -3,7 +3,8 @@ use serde::Deserialize;
 
 use airdao_gov_portal_db::session_manager::{SessionConfig, SessionManager};
 use shared::common::{
-    RewardInfo, SBTInfo, UpdateRewardKind, UpdateRewardRequest, UpdateSBTKind, UpdateUserSBTRequest,
+    BatchId, RewardInfo, SBTInfo, UpdateRewardKind, UpdateRewardRequest, UpdateSBTKind,
+    UpdateUserSBTRequest,
 };
 
 use crate::auto_refresh_token::AutoRefreshToken;
@@ -137,6 +138,7 @@ impl GovDbProvider {
 
     pub async fn claim_reward(
         &mut self,
+        block_number: u64,
         wallet: Address,
         id: u64,
     ) -> anyhow::Result<axum::Json<()>> {
@@ -147,7 +149,11 @@ impl GovDbProvider {
             .post([&self.config.url, "update-reward"].concat())
             .json(&UpdateRewardRequest {
                 token,
-                kind: UpdateRewardKind::Claim { wallet, id },
+                kind: UpdateRewardKind::Claim {
+                    block_number,
+                    wallet,
+                    id: BatchId(id),
+                },
             })
             .send()
             .await?
@@ -166,7 +172,11 @@ impl GovDbProvider {
         Ok(json)
     }
 
-    pub async fn revert_reward(&mut self, id: u64) -> anyhow::Result<axum::Json<()>> {
+    pub async fn revert_reward(
+        &mut self,
+        block_number: u64,
+        id: u64,
+    ) -> anyhow::Result<axum::Json<()>> {
         let token = self.auto_refresh_token.acquire_token()?.clone();
 
         let bytes = self
@@ -174,7 +184,10 @@ impl GovDbProvider {
             .post([&self.config.url, "update-reward"].concat())
             .json(&UpdateRewardRequest {
                 token,
-                kind: UpdateRewardKind::Revert { id },
+                kind: UpdateRewardKind::Revert {
+                    block_number,
+                    id: BatchId(id),
+                },
             })
             .send()
             .await?

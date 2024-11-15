@@ -1,14 +1,16 @@
 pub mod client;
 pub mod error;
+mod rewards_cache;
 
 use bson::{doc, Document};
-use ethereum_types::Address;
+use ethereum_types::{Address, U256};
 use futures_util::TryStreamExt;
 use mongodb::options::{CountOptions, FindOptions, UpdateOptions};
+use rewards_cache::{RewardsCache, RewardsDelta};
 use serde::Deserialize;
 
 use shared::common::{
-    RewardDbEntry, RewardInfo, RewardStatus, Rewards, RewardsDbEntry, UpdateRewardKind,
+    BatchId, RewardDbEntry, RewardInfo, RewardStatus, Rewards, RewardsDbEntry, UpdateRewardKind,
 };
 
 use crate::mongo_client::{MongoClient, MongoConfig};
@@ -30,6 +32,7 @@ pub struct RewardsManagerConfig {
 pub struct RewardsManager {
     pub db_client: RewardsDbClient,
     pub config: RewardsManagerConfig,
+    pub rewards_cache: RewardsCache,
 }
 
 impl RewardsManager {
@@ -40,14 +43,37 @@ impl RewardsManager {
     ) -> anyhow::Result<Self> {
         let db_client = RewardsDbClient::new(mongo_config, &config.collection).await?;
 
-        Ok(Self { db_client, config })
+        let mut rewards = Vec::with_capacity(MAX_GET_REWARDS_LIMIT as usize);
+
+        loop {
+            let fetched = Self::load_all_rewards(
+                &db_client,
+                Some(rewards.len() as u64),
+                Some(MAX_GET_REWARDS_LIMIT),
+            )
+            .await?;
+
+            if fetched.is_empty() {
+                break;
+            }
+
+            rewards.extend(fetched);
+        }
+
+        let rewards_cache = RewardsCache::init(rewards)?;
+
+        Ok(Self {
+            db_client,
+            config,
+            rewards_cache,
+        })
     }
 
-    /// Update reward struct at MongoDB by reward id [`u64`]
+    /// Update reward struct at MongoDB by reward id [`BatchId`]
     pub async fn update_reward(&self, update_kind: UpdateRewardKind) -> Result<(), error::Error> {
-        let (query, set_doc) = match update_kind {
+        let (query, set_doc, rewards_delta) = match update_kind {
             UpdateRewardKind::Grant(reward) => {
-                let (id, wallet, reward_entry) = <(u64, Address, RewardDbEntry)>::from(reward);
+                let (id, wallet, reward_entry) = <(BatchId, Address, RewardDbEntry)>::from(reward);
 
                 let query = doc! {
                     "id": bson::to_bson(&id)?,
@@ -57,9 +83,18 @@ impl RewardsManager {
                     format!("wallets.0x{}", hex::encode(wallet)): bson::to_bson(&reward_entry)?,
                 };
 
-                (query, set_doc)
+                (
+                    query,
+                    set_doc,
+                    // [`BatchId`] is a block number in which it was created
+                    RewardsDelta::Grant(id.0, id, wallet, reward_entry.amount),
+                )
             }
-            UpdateRewardKind::Claim { wallet, id } => {
+            UpdateRewardKind::Claim {
+                block_number,
+                wallet,
+                id,
+            } => {
                 let query = doc! {
                     "id": bson::to_bson(&id)?,
                 };
@@ -68,9 +103,13 @@ impl RewardsManager {
                     format!("wallets.0x{}.status", hex::encode(wallet)): bson::to_bson(&RewardStatus::Claimed)?,
                 };
 
-                (query, set_doc)
+                (
+                    query,
+                    set_doc,
+                    RewardsDelta::Claim(block_number, id, wallet),
+                )
             }
-            UpdateRewardKind::Revert { id } => {
+            UpdateRewardKind::Revert { block_number, id } => {
                 let query = doc! {
                     "id": bson::to_bson(&id)?,
                 };
@@ -79,7 +118,7 @@ impl RewardsManager {
                     "status": bson::to_bson(&RewardStatus::Reverted)?,
                 };
 
-                (query, set_doc)
+                (query, set_doc, RewardsDelta::RevertBatch(block_number, id))
             }
         };
 
@@ -99,9 +138,58 @@ impl RewardsManager {
 
         match upsert_result {
             // Upserts a Reward entry with an id
-            Ok(_) => Ok(()),
+            Ok(_) => self.rewards_cache.push_rewards_delta(rewards_delta),
             Err(e) => Err(e.into()),
         }
+    }
+
+    async fn load_all_rewards(
+        db_client: &RewardsDbClient,
+        start: Option<u64>,
+        limit: Option<u64>,
+    ) -> Result<Vec<RewardsDbEntry>, error::Error> {
+        let start = start.unwrap_or_default();
+        let limit = limit
+            .unwrap_or(DEFAULT_GET_REWARDS_LIMIT)
+            .clamp(1, MAX_GET_REWARDS_LIMIT) as i64;
+
+        let find_options = FindOptions::builder()
+            .max_time(db_client.req_timeout)
+            .skip(start)
+            .limit(limit)
+            .build();
+
+        tokio::time::timeout(db_client.req_timeout, async {
+            let mut results = Vec::with_capacity(limit as usize);
+            let mut stream = db_client.collection().find(doc! {}, find_options).await?;
+            while let Ok(Some(doc)) = stream.try_next().await {
+                let rewards =
+                    bson::from_document::<RewardsDbEntry>(doc).map_err(error::Error::from)?;
+                results.push(rewards);
+            }
+            Ok(results)
+        })
+        .await?
+    }
+
+    pub fn get_total_rewards(
+        &self,
+        requestor: &Address,
+        wallet: &Address,
+    ) -> Result<U256, error::Error> {
+        let requires_moderator_access_rights = wallet != requestor;
+
+        if requires_moderator_access_rights
+            && !self
+                .config
+                .moderators
+                .iter()
+                .any(|wallet| wallet == requestor)
+        {
+            return Err(error::Error::Unauthorized);
+        }
+
+        Ok(self.rewards_cache.get_total_rewards(wallet))
     }
 
     /// Counts all rewards allocated by requestor within MongoDB by provided wallet EVM-like address [`Address`]
@@ -121,7 +209,7 @@ impl RewardsManager {
             return Err(error::Error::Unauthorized);
         }
 
-        let expr = self.build_rewards_filter_expr(from, to, community)?;
+        let expr = Self::build_rewards_filter_expr(from, to, community)?;
         let filter = doc! {
             "$expr": bson::to_bson(&expr)?,
         };
@@ -164,13 +252,16 @@ impl RewardsManager {
             return Err(error::Error::Unauthorized);
         }
 
-        let expr = self.build_rewards_filter_expr(from, to, community)?;
+        let expr = Self::build_rewards_filter_expr(from, to, community)?;
         let filter = doc! {
             "$expr": expr
         };
 
         let find_options = FindOptions::builder()
             .max_time(self.db_client.req_timeout)
+            // .sort(doc! {
+            //     "timestamp": -1
+            // })
             .skip(start)
             .limit(limit)
             .build();
@@ -241,7 +332,7 @@ impl RewardsManager {
             return Err(error::Error::Unauthorized);
         }
 
-        let expr = self.build_rewards_filter_expr(from, to, community)?;
+        let expr = Self::build_rewards_filter_expr(from, to, community)?;
         let filter = doc! {
             format!("wallets.0x{}", hex::encode(wallet)): { "$exists": true },
             "$expr": bson::to_bson(&expr)?,
@@ -290,7 +381,7 @@ impl RewardsManager {
             return Err(error::Error::Unauthorized);
         }
 
-        let expr = self.build_rewards_filter_expr(from, to, community)?;
+        let expr = Self::build_rewards_filter_expr(from, to, community)?;
         let filter = doc! {
             format!("wallets.0x{}", hex::encode(wallet)): { "$exists": true },
             "$expr": bson::to_bson(&expr)?,
@@ -298,6 +389,9 @@ impl RewardsManager {
 
         let find_options = FindOptions::builder()
             .max_time(self.db_client.req_timeout)
+            // .sort(doc! {
+            //     "timestamp": -1
+            // })
             .skip(start)
             .limit(limit)
             .projection(doc! {
@@ -353,7 +447,6 @@ impl RewardsManager {
     }
 
     fn build_rewards_filter_expr(
-        &self,
         from: Option<u64>,
         to: Option<u64>,
         community: Option<&str>,

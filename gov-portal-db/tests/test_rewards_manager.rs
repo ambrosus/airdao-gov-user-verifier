@@ -1,5 +1,7 @@
 #![cfg(feature = "enable-integration-tests")]
 
+use std::time::Duration;
+
 use assert_matches::assert_matches;
 use chrono::Utc;
 use ethereum_types::U256;
@@ -9,7 +11,7 @@ use airdao_gov_portal_db::{
     mongo_client::MongoConfig,
     rewards_manager::{error, RewardsManager, RewardsManagerConfig},
 };
-use shared::common::{RewardInfo, RewardStatus, UpdateRewardKind};
+use shared::common::{BatchId, RewardInfo, RewardStatus, TimestampSeconds, UpdateRewardKind};
 
 #[tokio::test]
 async fn test_update_reward() -> Result<(), anyhow::Error> {
@@ -41,11 +43,11 @@ async fn test_update_reward() -> Result<(), anyhow::Error> {
 
     rewards_manager
         .update_reward(UpdateRewardKind::Grant(RewardInfo {
-            id: 1,
+            id: BatchId(1),
             grantor: addr_grantor,
             wallet: addr_1,
             amount: U256::one(),
-            timestamp: Utc::now().timestamp() as u64,
+            timestamp: Utc::now().into(),
             event_name: "Rewards".to_owned(),
             region: "NA".to_owned(),
             community: None,
@@ -56,11 +58,11 @@ async fn test_update_reward() -> Result<(), anyhow::Error> {
 
     rewards_manager
         .update_reward(UpdateRewardKind::Grant(RewardInfo {
-            id: 2,
+            id: BatchId(2),
             grantor: addr_grantor,
             wallet: addr_2,
             amount: U256::one(),
-            timestamp: Utc::now().timestamp() as u64,
+            timestamp: Utc::now().into(),
             event_name: "Rewards".to_owned(),
             region: "NA".to_owned(),
             community: Some("test".into()),
@@ -71,13 +73,17 @@ async fn test_update_reward() -> Result<(), anyhow::Error> {
 
     rewards_manager
         .update_reward(UpdateRewardKind::Claim {
-            id: 1,
+            block_number: 3,
+            id: BatchId(1),
             wallet: addr_1,
         })
         .await?;
 
     rewards_manager
-        .update_reward(UpdateRewardKind::Revert { id: 2 })
+        .update_reward(UpdateRewardKind::Revert {
+            block_number: 4,
+            id: BatchId(2),
+        })
         .await?;
 
     rewards_manager.db_client.collection.inner.drop().await?;
@@ -127,11 +133,11 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
             let wallet = Address::from_low_u64_le(i / 3 + 1);
             users_manager
                 .update_reward(UpdateRewardKind::Grant(RewardInfo {
-                    id: i % 10 + 1,
+                    id: BatchId(i % 10 + 1),
                     grantor: addr_grantor,
                     wallet,
                     amount: U256::from(i * 1_000_000_000),
-                    timestamp: now + i % 10 + 1,
+                    timestamp: TimestampSeconds(now + i % 10 + 1),
                     event_name: "Rewards".to_owned(),
                     region: "NA".to_owned(),
                     community: Some((i % 10 + 1).to_string()),
@@ -221,11 +227,11 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
         rewards,
         vec![
             RewardInfo {
-                id: 2,
+                id: BatchId(2),
                 grantor: Address::from_low_u64_le(11111111),
                 wallet: Address::from_low_u64_le(1),
                 amount: U256::from(1_000_000_000),
-                timestamp: now + 2,
+                timestamp: TimestampSeconds(now + 2),
                 event_name: "Rewards".to_owned(),
                 region: "NA".to_owned(),
                 community: Some("2".into()),
@@ -233,11 +239,11 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
                 status: RewardStatus::Granted,
             },
             RewardInfo {
-                id: 3,
+                id: BatchId(3),
                 grantor: Address::from_low_u64_le(11111111),
                 wallet: Address::from_low_u64_le(1),
                 amount: U256::from(2_000_000_000),
-                timestamp: now + 3,
+                timestamp: TimestampSeconds(now + 3),
                 event_name: "Rewards".to_owned(),
                 region: "NA".to_owned(),
                 community: Some("3".into()),
@@ -266,11 +272,11 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
     assert_eq!(
         rewards,
         vec![RewardInfo {
-            id: 3,
+            id: BatchId(3),
             grantor: Address::from_low_u64_le(11111111),
             wallet: Address::from_low_u64_le(1),
             amount: U256::from(2_000_000_000),
-            timestamp: now + 3,
+            timestamp: TimestampSeconds(now + 3),
             event_name: "Rewards".to_owned(),
             region: "NA".to_owned(),
             community: Some("3".into()),
@@ -298,11 +304,11 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
     assert_eq!(
         rewards,
         vec![RewardInfo {
-            id: 2,
+            id: BatchId(2),
             grantor: Address::from_low_u64_le(11111111),
             wallet: Address::from_low_u64_le(1),
             amount: U256::from(1_000_000_000),
-            timestamp: now + 2,
+            timestamp: TimestampSeconds(now + 2),
             event_name: "Rewards".to_owned(),
             region: "NA".to_owned(),
             community: Some("2".into()),
@@ -330,7 +336,7 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
         RewardsManager::new(
             &mongo_config,
             RewardsManagerConfig {
-                moderators,
+                moderators: moderators.clone(),
                 collection: "Rewards".to_owned(),
             },
         )
@@ -347,30 +353,27 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
     let now = Utc::now().timestamp() as u64;
     let addr_grantor = Address::from_low_u64_le(11111111);
 
-    futures_util::future::join_all((1u64..=1000).map(|i| {
-        let users_manager = rewards_manager.clone();
+    for i in 1..1000 {
+        let wallet = Address::from_low_u64_le(i % 16 + 1);
+        let id = BatchId(i / 5 + 1);
+        let timestamp = TimestampSeconds(now + id.0 * 4 * 60 * 60);
 
-        async move {
-            let wallet = Address::from_low_u64_le(i / 60 + 1);
-            let id = i % 200 + 1;
-            let timestamp = now + id * 4 * 60 * 60;
-            users_manager
-                .update_reward(UpdateRewardKind::Grant(RewardInfo {
-                    id,
-                    grantor: addr_grantor,
-                    wallet,
-                    amount: U256::from(i * 1_000_000_000),
-                    timestamp,
-                    event_name: "Rewards".to_owned(),
-                    region: "NA".to_owned(),
-                    community: Some((id / 10).to_string()),
-                    pseudo: None,
-                    status: RewardStatus::Granted,
-                }))
-                .await
-        }
-    }))
-    .await;
+        rewards_manager
+            .update_reward(UpdateRewardKind::Grant(RewardInfo {
+                id,
+                grantor: addr_grantor,
+                wallet,
+                amount: U256::from(i * 1_000_000_000),
+                timestamp,
+                event_name: "Rewards".to_owned(),
+                region: "NA".to_owned(),
+                community: Some((id.0 / 10).to_string()),
+                pseudo: None,
+                status: RewardStatus::Granted,
+            }))
+            .await
+            .unwrap();
+    }
 
     let mut all_rewards = Vec::with_capacity(1000);
 
@@ -427,6 +430,9 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
         rewards_by_wallet.extend(batch);
     }
 
+    all_rewards.sort_by(|l, r| l.id.cmp(&r.id));
+    rewards_by_wallet.sort_by(|l, r| l.id.cmp(&r.id));
+
     assert_eq!(
         all_rewards
             .into_iter()
@@ -445,14 +451,14 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
                 &Address::from_low_u64_le(1),
                 None,
                 None,
-                Some(now + 2 * 4 * 60 * 60),
-                Some(now + 10 * 4 * 60 * 60),
+                Some(now + 4 * 60 * 60),
+                Some(now + 9 * 4 * 60 * 60),
                 None,
             )
             .await
             .unwrap()
             .len(),
-        8
+        2
     );
 
     assert_eq!(
@@ -463,7 +469,7 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
                 None,
                 None,
                 None,
-                Some(now + 2 * 4 * 60 * 60 + 1),
+                Some(now + 4 * 4 * 60 * 60 + 1),
                 None,
             )
             .await
@@ -476,13 +482,25 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
         .count_rewards_by_wallet(
             &Address::from_low_u64_le(1),
             &Address::from_low_u64_le(1),
-            Some(now + 2 * 4 * 60 * 60 + 1),
+            None,
             None,
             None,
         )
         .await
         .unwrap();
-    assert_eq!(total, 58);
+    assert_eq!(total, 62);
+
+    let total = rewards_manager
+        .count_rewards_by_wallet(
+            &Address::from_low_u64_le(1),
+            &Address::from_low_u64_le(1),
+            Some(now + 4 * 4 * 60 * 60 + 1),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(total, 61);
 
     assert_eq!(
         rewards_manager
@@ -491,14 +509,14 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
                 &Address::from_low_u64_le(1),
                 None,
                 None,
-                Some(now + 2 * 4 * 60 * 60 + 1),
+                Some(now + 4 * 60 * 60 + 1),
                 None,
                 None,
             )
             .await
             .unwrap()
             .len(),
-        58
+        62
     );
 
     assert_eq!(
@@ -508,14 +526,14 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
                 &Address::from_low_u64_le(1),
                 None,
                 None,
-                Some(now + 2 * 4 * 60 * 60 + 1),
+                Some(now + 4 * 60 * 60 + 1),
                 None,
                 Some("0"),
             )
             .await
             .unwrap()
             .len(),
-        7
+        2
     );
 
     assert_eq!(
@@ -525,14 +543,113 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
                 &Address::from_low_u64_le(1),
                 None,
                 None,
-                Some(now + 2 * 4 * 60 * 60 + 1),
+                Some(now + 4 * 60 * 60 + 1),
                 None,
-                Some("1"),
+                Some("10"),
             )
             .await
             .unwrap()
             .len(),
-        10
+        4
+    );
+
+    tokio::time::sleep(Duration::from_millis(1000)).await;
+
+    // let mut total = U256::zero();
+    // for reward in rewards_manager
+    //     .get_rewards_by_wallet(
+    //         &Address::from_low_u64_le(1),
+    //         &Address::from_low_u64_le(1),
+    //         None,
+    //         None,
+    //         None,
+    //         None,
+    //         None,
+    //     )
+    //     .await
+    //     .unwrap()
+    // {
+    //     total = total.saturating_add(
+    //         reward
+    //             .rewards_by_wallet
+    //             .get(&Address::from_low_u64_le(1))
+    //             .map(|r| r.amount)
+    //             .unwrap_or_default(),
+    //     );
+    // }
+    // println!("{total:?}");
+
+    assert_eq!(
+        rewards_manager
+            .get_total_rewards(&Address::from_low_u64_le(1), &Address::from_low_u64_le(1))
+            .unwrap(),
+        U256::from_dec_str("31248000000000").unwrap()
+    );
+
+    // Restore cache from db
+    let rewards_manager = std::sync::Arc::new(
+        RewardsManager::new(
+            &mongo_config,
+            RewardsManagerConfig {
+                moderators,
+                collection: "Rewards".to_owned(),
+            },
+        )
+        .await?,
+    );
+
+    assert_eq!(
+        rewards_manager
+            .get_total_rewards(&Address::from_low_u64_le(1), &Address::from_low_u64_le(1))
+            .unwrap(),
+        U256::from_dec_str("31248000000000").unwrap()
+    );
+
+    assert_eq!(
+        rewards_manager
+            .get_total_rewards(
+                &rewards_manager.config.moderators[0],
+                &Address::from_low_u64_le(1)
+            )
+            .unwrap(),
+        U256::from_dec_str("31248000000000").unwrap()
+    );
+
+    rewards_manager
+        .update_reward(UpdateRewardKind::Revert {
+            block_number: 201,
+            id: BatchId(4),
+        })
+        .await
+        .unwrap();
+
+    tokio::time::sleep(Duration::from_millis(1000)).await;
+
+    assert_eq!(
+        rewards_manager
+            .get_total_rewards(&Address::from_low_u64_le(1), &Address::from_low_u64_le(1))
+            .unwrap(),
+        U256::from_dec_str("31232000000000").unwrap()
+    );
+
+    rewards_manager
+        .update_reward(UpdateRewardKind::Revert {
+            block_number: 202,
+            id: BatchId(7),
+        })
+        .await
+        .unwrap();
+
+    tokio::time::sleep(Duration::from_millis(1000)).await;
+
+    assert_eq!(
+        rewards_manager
+            .get_total_rewards(
+                &rewards_manager.config.moderators[0],
+                &Address::from_low_u64_le(1)
+            )
+            .unwrap(),
+        U256::from_dec_str("31200000000000").unwrap()
     );
 
     rewards_manager.db_client.collection.inner.drop().await?;

@@ -1,3 +1,5 @@
+use tokio::sync::mpsc;
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Not authorized")]
@@ -14,4 +16,12 @@ pub enum Error {
     Timeout(#[from] tokio::time::error::Elapsed),
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
+    #[error("Send error: {0}")]
+    Send(String),
+}
+
+impl<T: std::fmt::Debug> From<mpsc::error::SendError<T>> for Error {
+    fn from(error: mpsc::error::SendError<T>) -> Self {
+        Self::Send(error.to_string())
+    }
 }

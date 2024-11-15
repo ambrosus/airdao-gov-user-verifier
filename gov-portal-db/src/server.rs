@@ -1,6 +1,6 @@
 use axum::{extract::State, routing::post, Json, Router};
 use chrono::{DateTime, Utc};
-use ethereum_types::Address;
+use ethereum_types::{Address, U256};
 use futures_util::{future, FutureExt, TryFutureExt};
 use jsonwebtoken::TokenData;
 use serde::{Deserialize, Serialize};
@@ -122,6 +122,7 @@ pub struct RewardsRequest {
 pub struct RewardsResponse {
     pub data: Vec<Rewards>,
     pub total: u64,
+    pub total_rewards: Option<U256>,
 }
 
 /// JSON-serialized request passed as POST-data to `/users` endpoint
@@ -605,7 +606,11 @@ async fn rewards_route(
                     manager
                         .get_rewards(&requestor, start, limit, from, to, community)
                         .await
-                        .map(|data| RewardsResponse { data, total })
+                        .map(|data| RewardsResponse {
+                            data,
+                            total,
+                            total_rewards: None,
+                        })
                 }
             })
             .await
@@ -636,7 +641,11 @@ async fn rewards_route(
                             &requestor, &wallet, start, limit, from, to, community,
                         )
                         .await
-                        .map(|data| RewardsResponse { data, total })
+                        .map(|data| RewardsResponse {
+                            data,
+                            total,
+                            total_rewards: manager.get_total_rewards(&requestor, &wallet).ok(),
+                        })
                 }
             })
             .await

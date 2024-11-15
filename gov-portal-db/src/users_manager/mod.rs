@@ -798,6 +798,7 @@ mod tests {
                     },
                     "subject": "Complete Your Governor Email Verification"
                 },
+                "collection": "Users",
                 "moderators": ["0xc0ffee254729296a45a3885639AC7E10F9d54979"]
             }
         "#,

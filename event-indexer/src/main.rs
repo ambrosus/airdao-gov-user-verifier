@@ -12,7 +12,7 @@ use event_listener::{EventListener, GovEvent, GovEventNotification};
 use gov_db_provider::GovDbProvider;
 use indexer_state_redis_cache::IndexerStateRedisCache;
 use shared::{
-    common::{RewardInfo, RewardStatus, SBTInfo},
+    common::{BatchId, RewardInfo, RewardStatus, SBTInfo, TimestampSeconds},
     logger, utils,
 };
 
@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut indexer_state_redis_cache =
         IndexerStateRedisCache::new(chain_id, &config.redis, config.block_number).await?;
-
+    indexer_state_redis_cache.block_number = 2513099;
     let mut gov_db_provider = GovDbProvider::new(config.db.clone())?;
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<GovEventNotification>();
@@ -88,11 +88,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 GovEvent::Reward(event) => {
                     gov_db_provider
                         .insert_reward(RewardInfo {
-                            id: event_notification.block_number,
+                            id: BatchId(event_notification.block_number),
                             grantor: event.grantor,
                             wallet: event.wallet,
                             amount: event.amount,
-                            timestamp: event.timestamp.as_u64(),
+                            timestamp: TimestampSeconds(event.timestamp.as_u64()),
                             event_name: event.name.clone(),
                             region: event.region.clone(),
                             community: Some(event.community.clone()).filter(|v| !v.is_empty()),
@@ -102,9 +102,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await
                 }
                 GovEvent::ClaimReward(wallet, id) => {
-                    gov_db_provider.claim_reward(*wallet, *id).await
+                    gov_db_provider
+                        .claim_reward(event_notification.block_number, *wallet, *id)
+                        .await
                 }
-                GovEvent::RevertReward(id) => gov_db_provider.revert_reward(*id).await,
+                GovEvent::RevertReward(id) => {
+                    gov_db_provider
+                        .revert_reward(event_notification.block_number, *id)
+                        .await
+                }
             };
 
             if let Ok(axum::Json(())) = result {

@@ -104,8 +104,17 @@ pub enum UpdateSBTKind {
 #[serde(rename_all = "camelCase")]
 pub enum UpdateRewardKind {
     Grant(RewardInfo),
-    Claim { wallet: Address, id: u64 },
-    Revert { id: u64 },
+    Claim {
+        #[serde(rename = "blockNumber")]
+        block_number: u64,
+        wallet: Address,
+        id: BatchId,
+    },
+    Revert {
+        #[serde(rename = "blockNumber")]
+        block_number: u64,
+        id: BatchId,
+    },
 }
 
 /// User's profile information struct
@@ -121,9 +130,9 @@ pub struct SBTInfo {
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Rewards {
-    pub id: u64,
+    pub id: BatchId,
     pub rewards_by_wallet: HashMap<Address, RewardInfo>,
-    pub timestamp: u64,
+    pub timestamp: TimestampSeconds,
     #[serde(default, skip_serializing_if = "RewardStatus::is_granted")]
     pub status: RewardStatus,
 }
@@ -132,11 +141,11 @@ pub struct Rewards {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RewardInfo {
-    pub id: u64,
+    pub id: BatchId,
     pub grantor: Address,
     pub wallet: Address,
     pub amount: U256,
-    pub timestamp: u64,
+    pub timestamp: TimestampSeconds,
     pub event_name: String,
     pub region: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -159,11 +168,16 @@ pub struct SBTDbEntry {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RewardsDbEntry {
-    pub id: u64,
+    pub id: BatchId,
     pub wallets: HashMap<Address, RewardDbEntry>,
     #[serde(default)]
     pub status: RewardStatus,
 }
+
+#[derive(
+    Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize, Clone, Default, Copy,
+)]
+pub struct BatchId(pub u64);
 
 /// User's reward information struct stored in MongoDB
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,7 +185,7 @@ pub struct RewardsDbEntry {
 pub struct RewardDbEntry {
     pub grantor: Address,
     pub amount: U256,
-    pub timestamp: u64,
+    pub timestamp: TimestampSeconds,
     pub event_name: String,
     pub region: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -180,6 +194,27 @@ pub struct RewardDbEntry {
     pub pseudo: Option<String>,
     #[serde(default, skip_serializing_if = "RewardStatus::is_granted")]
     pub status: RewardStatus,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, Eq, Copy)]
+pub struct TimestampSeconds(pub u64);
+
+impl PartialOrd for TimestampSeconds {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl PartialEq for TimestampSeconds {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl From<DateTime<Utc>> for TimestampSeconds {
+    fn from(value: DateTime<Utc>) -> Self {
+        Self(value.timestamp() as u64)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Default)]
@@ -850,8 +885,8 @@ impl From<SBTInfo> for (Address, SBTDbEntry) {
     }
 }
 
-impl From<(u64, Address, RewardDbEntry)> for RewardInfo {
-    fn from((id, wallet, value): (u64, Address, RewardDbEntry)) -> Self {
+impl From<(BatchId, Address, RewardDbEntry)> for RewardInfo {
+    fn from((id, wallet, value): (BatchId, Address, RewardDbEntry)) -> Self {
         Self {
             id,
             grantor: value.grantor,
@@ -867,7 +902,7 @@ impl From<(u64, Address, RewardDbEntry)> for RewardInfo {
     }
 }
 
-impl From<RewardInfo> for (u64, Address, RewardDbEntry) {
+impl From<RewardInfo> for (BatchId, Address, RewardDbEntry) {
     fn from(value: RewardInfo) -> Self {
         (
             value.id,
@@ -905,6 +940,7 @@ mod tests {
         let _ = serde_json::from_str::<UpdateRewardRequest>(
             r#"{
                 "claim": {
+                    "blockNumber": 10,
                     "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
                     "id": 1
                 },
@@ -916,6 +952,7 @@ mod tests {
         let _ = serde_json::from_str::<UpdateRewardRequest>(
             r#"{
                 "revert": {
+                    "blockNumber": 20,
                     "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
                     "id": 2
                 },
@@ -927,6 +964,7 @@ mod tests {
         let _ = serde_json::from_str::<UpdateRewardRequest>(
             r#"{
                 "revert": {
+                    "blockNumber": 30,
                     "id": 3
                 },
                 "token": "some_token"
@@ -937,9 +975,13 @@ mod tests {
         let _ = serde_json::from_str::<UpdateRewardRequest>(
             r#"{
                 "grant": {
+                    "grantor": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
                     "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
                     "id": 4,
-                    "amount": "1000000"
+                    "amount": "1000000",
+                    "eventName": "test",
+                    "region": "US",
+                    "timestamp": 1731661821
                 },
                 "token": "some_token"
             }"#,
@@ -951,21 +993,21 @@ mod tests {
     fn test_de_update_user_sbt_req() {
         let _ = serde_json::from_str::<UpdateUserSBTRequest>(
             r#"{
-            "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
-            "address": "0x2d41b52C0683bed2C43727521493246256bD5B02",
-            "issuedAtBlock": 1000,
-            "name": "HumanSBT",
-            "token": "some_token"
-        }"#,
+                "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
+                "address": "0x2d41b52C0683bed2C43727521493246256bD5B02",
+                "issuedAtBlock": 1000,
+                "name": "HumanSBT",
+                "token": "some_token"
+            }"#,
         )
         .unwrap();
 
         let _ = serde_json::from_str::<UpdateUserSBTRequest>(
             r#"{
-            "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
-            "address": "0x2d41b52C0683bed2C43727521493246256bD5B02",
-            "token": "some_token"
-        }"#,
+                "wallet": "0x787afc1E7a61af49D7B94F8E774aC566D1B60e99",
+                "address": "0x2d41b52C0683bed2C43727521493246256bD5B02",
+                "token": "some_token"
+            }"#,
         )
         .unwrap();
     }
@@ -987,20 +1029,20 @@ mod tests {
 
         let mut sbts = serde_json::from_str::<UserDbEntry>(
             r#"{
-            "wallet": "0x0000000000000000000000000000000000000000",
-            "0": 1,
-            "sbts": {
-                "0x0000000000000000000000000000000000001234": {
-                    "name": "Test1",
-                    "issuedAtBlock": 1
+                "wallet": "0x0000000000000000000000000000000000000000",
+                "0": 1,
+                "sbts": {
+                    "0x0000000000000000000000000000000000001234": {
+                        "name": "Test1",
+                        "issuedAtBlock": 1
+                    },
+                    "0x0000000000000000000000000000000000001235": {
+                        "name": "Test2",
+                        "issuedAtBlock": 2
+                    }                
                 },
-                "0x0000000000000000000000000000000000001235": {
-                    "name": "Test2",
-                    "issuedAtBlock": 2
-                }                
-            },
-            "test": "value"
-        }"#,
+                "test": "value"
+            }"#,
         )
         .unwrap()
         .sbts
