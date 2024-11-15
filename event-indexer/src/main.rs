@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut indexer_state_redis_cache =
         IndexerStateRedisCache::new(chain_id, &config.redis, config.block_number).await?;
-    indexer_state_redis_cache.block_number = 2513099;
+
     let mut gov_db_provider = GovDbProvider::new(config.db.clone())?;
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<GovEventNotification>();
