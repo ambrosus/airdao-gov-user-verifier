@@ -59,12 +59,8 @@ impl RewardsCache {
         let mut unclaimed_rewards = HashMap::<BatchId, HashMap<Address, Reward>>::default();
 
         for entry in rewards {
-            match entry.status {
-                RewardStatus::Granted => (),
-                RewardStatus::Reverted => continue,
-                RewardStatus::Claimed => {
-                    return Err(anyhow::anyhow!("Unexpected status for a batch {entry:?}").into());
-                }
+            if entry.status == RewardStatus::Claimed {
+                return Err(anyhow::anyhow!("Unexpected status for a batch {entry:?}").into());
             }
 
             // [`BatchId`] is a block number in which it was created
@@ -72,6 +68,10 @@ impl RewardsCache {
 
             for (wallet, reward) in entry.wallets {
                 match reward.status {
+                    // If batch was reverted
+                    RewardStatus::Granted if entry.status != RewardStatus::Granted => {
+                        continue;
+                    }
                     RewardStatus::Granted => {
                         unclaimed_rewards
                             .entry(entry.id)
