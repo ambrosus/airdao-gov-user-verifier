@@ -151,7 +151,7 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
 
     assert_matches!(
         rewards_manager
-            .get_rewards(&Address::from_low_u64_le(0), None, None, None, None, None)
+            .get_rewards(&Address::from_low_u64_le(0), None, None, None, None, None,)
             .await,
         Err(error::Error::Unauthorized)
     );
@@ -165,7 +165,7 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
                 None,
                 None,
                 None,
-                None
+                None,
             )
             .await,
         Err(error::Error::Unauthorized)
@@ -187,7 +187,7 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
             None,
             None,
             None,
-            None
+            None,
         )
         .await
         .is_ok());
@@ -200,7 +200,7 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
             Some(0),
             None,
             None,
-            None
+            None,
         )
         .await
         .unwrap()
@@ -378,7 +378,7 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
     let mut all_rewards = Vec::with_capacity(1000);
 
     loop {
-        let Ok(batch) = rewards_manager
+        let batch = rewards_manager
             .get_rewards(
                 &addr_grantor,
                 Some(all_rewards.len() as u64),
@@ -388,9 +388,7 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
                 None,
             )
             .await
-        else {
-            panic!("Failed to fetch rewards")
-        };
+            .unwrap();
 
         if batch.is_empty() {
             break;

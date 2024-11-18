@@ -259,9 +259,9 @@ impl RewardsManager {
 
         let find_options = FindOptions::builder()
             .max_time(self.db_client.req_timeout)
-            // .sort(doc! {
-            //     "timestamp": -1
-            // })
+            .sort(doc! {
+                "id": -1,
+            })
             .skip(start)
             .limit(limit)
             .build();
@@ -389,9 +389,9 @@ impl RewardsManager {
 
         let find_options = FindOptions::builder()
             .max_time(self.db_client.req_timeout)
-            // .sort(doc! {
-            //     "timestamp": -1
-            // })
+            .sort(doc! {
+                "id": -1,
+            })
             .skip(start)
             .limit(limit)
             .projection(doc! {
