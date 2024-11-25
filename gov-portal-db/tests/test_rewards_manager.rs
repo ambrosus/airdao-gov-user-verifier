@@ -579,7 +579,7 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
 
     assert_eq!(
         rewards_manager
-            .get_total_rewards(&Address::from_low_u64_le(1), &Address::from_low_u64_le(1))
+            .get_available_rewards(&Address::from_low_u64_le(1), &Address::from_low_u64_le(1))
             .unwrap(),
         U256::from_dec_str("31248000000000").unwrap()
     );
@@ -598,14 +598,14 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
 
     assert_eq!(
         rewards_manager
-            .get_total_rewards(&Address::from_low_u64_le(1), &Address::from_low_u64_le(1))
+            .get_available_rewards(&Address::from_low_u64_le(1), &Address::from_low_u64_le(1))
             .unwrap(),
         U256::from_dec_str("31248000000000").unwrap()
     );
 
     assert_eq!(
         rewards_manager
-            .get_total_rewards(
+            .get_available_rewards(
                 &rewards_manager.config.moderators[0],
                 &Address::from_low_u64_le(1)
             )
@@ -625,7 +625,7 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
 
     assert_eq!(
         rewards_manager
-            .get_total_rewards(&Address::from_low_u64_le(1), &Address::from_low_u64_le(1))
+            .get_available_rewards(&Address::from_low_u64_le(1), &Address::from_low_u64_le(1))
             .unwrap(),
         U256::from_dec_str("31232000000000").unwrap()
     );
@@ -642,7 +642,7 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
 
     assert_eq!(
         rewards_manager
-            .get_total_rewards(
+            .get_available_rewards(
                 &rewards_manager.config.moderators[0],
                 &Address::from_low_u64_le(1)
             )

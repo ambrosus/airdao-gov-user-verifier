@@ -123,6 +123,7 @@ pub struct RewardsResponse {
     pub data: Vec<Rewards>,
     pub total: u64,
     pub total_rewards: Option<U256>,
+    pub available_rewards: Option<U256>,
 }
 
 /// JSON-serialized request passed as POST-data to `/users` endpoint
@@ -609,7 +610,8 @@ async fn rewards_route(
                         .map(|data| RewardsResponse {
                             data,
                             total,
-                            total_rewards: None,
+                            available_rewards: None,
+                            total_rewards: manager.get_total_rewards(&requestor).ok(),
                         })
                 }
             })
@@ -644,7 +646,10 @@ async fn rewards_route(
                         .map(|data| RewardsResponse {
                             data,
                             total,
-                            total_rewards: manager.get_total_rewards(&requestor, &wallet).ok(),
+                            available_rewards: manager
+                                .get_available_rewards(&requestor, &wallet)
+                                .ok(),
+                            total_rewards: None,
                         })
                 }
             })

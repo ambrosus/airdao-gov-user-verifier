@@ -172,7 +172,7 @@ impl RewardsManager {
         .await?
     }
 
-    pub fn get_total_rewards(
+    pub fn get_available_rewards(
         &self,
         requestor: &Address,
         wallet: &Address,
@@ -189,7 +189,19 @@ impl RewardsManager {
             return Err(error::Error::Unauthorized);
         }
 
-        Ok(self.rewards_cache.get_total_rewards(wallet))
+        Ok(self.rewards_cache.get_available_rewards(wallet))
+    }
+
+    pub fn get_total_rewards(&self, requestor: &Address) -> Result<U256, error::Error> {
+        if !self
+            .config
+            .moderators
+            .iter()
+            .any(|wallet| wallet == requestor)
+        {
+            return Err(error::Error::Unauthorized);
+        }
+        Ok(self.rewards_cache.get_total_rewards())
     }
 
     /// Counts all rewards allocated by requestor within MongoDB by provided wallet EVM-like address [`Address`]
