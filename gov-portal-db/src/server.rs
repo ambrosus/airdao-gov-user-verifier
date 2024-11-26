@@ -1,6 +1,7 @@
 use axum::{extract::State, routing::post, Json, Router};
 use chrono::{DateTime, Utc};
 use ethereum_types::{Address, U256};
+use ethers::utils::format_units;
 use futures_util::{future, FutureExt, TryFutureExt};
 use jsonwebtoken::TokenData;
 use serde::{Deserialize, Serialize};
@@ -105,6 +106,15 @@ pub struct TokenResponse {
 }
 
 /// JSON-serialized request passed as POST-data to `/rewards` endpoint
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum RewardsResponseKind {
+    #[default]
+    Json,
+    Csv,
+}
+
+/// JSON-serialized request passed as POST-data to `/rewards` endpoint
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RewardsRequest {
@@ -115,15 +125,24 @@ pub struct RewardsRequest {
     pub from: Option<u64>,
     pub to: Option<u64>,
     pub community: Option<String>,
+    #[serde(default)]
+    pub output: RewardsResponseKind,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RewardsResponse {
+pub struct RewardsJsonResponse {
     pub data: Vec<Rewards>,
     pub total: u64,
     pub total_rewards: Option<U256>,
     pub available_rewards: Option<U256>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase", untagged)]
+pub enum RewardsResponse {
+    Json(RewardsJsonResponse),
+    Csv(String),
 }
 
 /// JSON-serialized request passed as POST-data to `/users` endpoint
@@ -594,6 +613,7 @@ async fn rewards_route(
                 from,
                 to,
                 community,
+                output: RewardsResponseKind::Json,
                 ..
             },
         )) => state
@@ -607,11 +627,13 @@ async fn rewards_route(
                     manager
                         .get_rewards(&requestor, start, limit, from, to, community)
                         .await
-                        .map(|data| RewardsResponse {
-                            data,
-                            total,
-                            available_rewards: None,
-                            total_rewards: manager.get_total_rewards(&requestor).ok(),
+                        .map(|data| {
+                            RewardsResponse::Json(RewardsJsonResponse {
+                                data,
+                                total,
+                                available_rewards: None,
+                                total_rewards: manager.get_total_rewards(&requestor).ok(),
+                            })
                         })
                 }
             })
@@ -628,6 +650,7 @@ async fn rewards_route(
                 from,
                 to,
                 community,
+                output: RewardsResponseKind::Json,
                 ..
             },
         )) => state
@@ -643,18 +666,61 @@ async fn rewards_route(
                             &requestor, &wallet, start, limit, from, to, community,
                         )
                         .await
-                        .map(|data| RewardsResponse {
-                            data,
-                            total,
-                            available_rewards: manager
-                                .get_available_rewards(&requestor, &wallet)
-                                .ok(),
-                            total_rewards: None,
+                        .map(|data| {
+                            RewardsResponse::Json(RewardsJsonResponse {
+                                data,
+                                total,
+                                available_rewards: manager
+                                    .get_available_rewards(&requestor, &wallet)
+                                    .ok(),
+                                total_rewards: None,
+                            })
                         })
                 }
             })
             .await
             .map_err(|e| format!("Unable to get rewards. Error: {e}")),
+        Ok((
+            requestor,
+            RewardsRequest {
+                wallet: None,
+                from,
+                to,
+                community,
+                output: RewardsResponseKind::Csv,
+                ..
+            },
+        )) => get_rewards_csv_report(
+            state.rewards_manager.clone(),
+            requestor,
+            from,
+            to,
+            community,
+        )
+        .await
+        .map(RewardsResponse::Csv),
+
+        Ok((
+            requestor,
+            RewardsRequest {
+                wallet: Some(wallet),
+                from,
+                to,
+                community,
+                output: RewardsResponseKind::Csv,
+                ..
+            },
+        )) => get_rewards_csv_report_by_wallet(
+            state.rewards_manager.clone(),
+            requestor,
+            wallet,
+            from,
+            to,
+            community,
+        )
+        .await
+        .map(RewardsResponse::Csv),
+
         Err(e) => Err(format!("Rewards request failure. Error: {e}")),
     };
 
@@ -929,19 +995,185 @@ async fn get_sbt_report(
     Ok(results)
 }
 
+fn format_rewards_csv_report<I>(total_entries: u64, entries: I) -> String
+where
+    I: Iterator<Item = Rewards>,
+{
+    let mut csv_report = String::with_capacity(total_entries as usize * 256);
+    csv_report += "id,grantor,wallet,amount,timestamp,eventName,region,community\n";
+
+    for rewards in entries {
+        for (wallet, reward) in rewards.rewards_by_wallet {
+            csv_report += &format!(
+                "{},{:?},{:?},{},{},{},{},{}\n",
+                reward.id.0,
+                reward.grantor,
+                wallet,
+                format_units(reward.amount, "ether").unwrap_or_default(),
+                reward.timestamp.0,
+                reward.event_name,
+                reward.region,
+                reward.community.unwrap_or_default()
+            );
+        }
+    }
+
+    csv_report
+}
+
+pub async fn get_rewards_csv_report(
+    rewards_manager: Arc<RewardsManager>,
+    requestor: Address,
+    from: Option<u64>,
+    to: Option<u64>,
+    community: Option<String>,
+) -> Result<String, String> {
+    let (from, to) = match (from, to) {
+        (Some(from), Some(to))
+            if from < to
+                && from.saturating_sub(to)
+                    < rewards_manager.config.max_csv_report_date_range.as_secs() =>
+        {
+            (from, to)
+        }
+        _ => {
+            return Err(format!(
+                "`from` and `to` params should be provided and range should not exceed {:?}",
+                rewards_manager.config.max_csv_report_date_range
+            ));
+        }
+    };
+
+    tokio::spawn(async move {
+        let total_rewards = rewards_manager
+            .count_rewards(&requestor, Some(from), Some(to), community.as_deref())
+            .await
+            .map_err(|e| format!("Failed to compute total number of reward entries: {e:?}"))?;
+        let max_limit = rewards_manager.config.max_get_rewards_limit;
+        let requests = {
+            (0..total_rewards).step_by(max_limit as usize).map(|start| {
+                let rewards_manager = rewards_manager.clone();
+                let community = community.as_deref();
+                async move {
+                    (
+                        start,
+                        rewards_manager
+                            .get_rewards(
+                                &requestor,
+                                Some(start),
+                                Some(max_limit),
+                                Some(from),
+                                Some(to),
+                                community,
+                            )
+                            .await,
+                    )
+                }
+            })
+        };
+
+        let mut responses = future::join_all(requests).await;
+        responses.sort_by(|(start1, _), (start2, _)| start1.cmp(start2));
+
+        Ok(format_rewards_csv_report(
+            total_rewards,
+            responses
+                .into_iter()
+                .map(|(_, result)| result)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Failed to get one or more rewards batch: {e:?}"))?
+                .into_iter()
+                .flatten(),
+        ))
+    })
+    .await
+    .map_err(|e| format!("Failed to get rewards: {e:?}"))?
+}
+
+pub async fn get_rewards_csv_report_by_wallet(
+    rewards_manager: Arc<RewardsManager>,
+    requestor: Address,
+    wallet: Address,
+    from: Option<u64>,
+    to: Option<u64>,
+    community: Option<String>,
+) -> Result<String, String> {
+    let (from, to) = match (from, to) {
+        (Some(from), Some(to))
+            if from < to
+                && from.saturating_sub(to)
+                    < rewards_manager.config.max_csv_report_date_range.as_secs() =>
+        {
+            (from, to)
+        }
+        _ => {
+            return Err(format!(
+                "`from` and `to` params should be provided and range should not exceed {:?}",
+                rewards_manager.config.max_csv_report_date_range
+            ));
+        }
+    };
+
+    tokio::spawn(async move {
+        let total_rewards = rewards_manager
+            .count_rewards_by_wallet(
+                &requestor,
+                &wallet,
+                Some(from),
+                Some(to),
+                community.as_deref(),
+            )
+            .await
+            .map_err(|e| format!("Failed to compute total number of reward entries: {e:?}"))?;
+        let max_limit = rewards_manager.config.max_get_rewards_limit;
+        let requests = {
+            (0..total_rewards).step_by(max_limit as usize).map(|start| {
+                let rewards_manager = rewards_manager.clone();
+                let community = community.as_deref();
+                async move {
+                    (
+                        start,
+                        rewards_manager
+                            .get_rewards_by_wallet(
+                                &requestor,
+                                &wallet,
+                                Some(start),
+                                Some(max_limit),
+                                Some(from),
+                                Some(to),
+                                community,
+                            )
+                            .await,
+                    )
+                }
+            })
+        };
+
+        let mut responses = future::join_all(requests).await;
+        responses.sort_by(|(start1, _), (start2, _)| start1.cmp(start2));
+
+        Ok(format_rewards_csv_report(
+            total_rewards,
+            responses
+                .into_iter()
+                .map(|(_, result)| result)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Failed to get one or more rewards batch: {e:?}"))?
+                .into_iter()
+                .flatten(),
+        ))
+    })
+    .await
+    .map_err(|e| format!("Failed to get rewards: {e:?}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use super::*;
     use crate::quiz::{QuizQuestionDifficultyLevel, QuizVariant};
-    use axum::response::IntoResponse;
     use shared::rpc_node_client::{RpcNodeClient, RpcNodeConfig};
-
-    #[test]
-    fn test_() {
-        println!("{:?}", Json::into_response(Json(())).body());
-    }
 
     #[tokio::test]
     #[ignore]

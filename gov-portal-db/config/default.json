@@ -34,6 +34,8 @@
     },
     "rewardsManager": {
         "moderators": [],
+        "maxCsvReportDateRange": 16070400,
+        "maxGetRewardsLimit": 100,
         "collection": "Rewards"
     },
     "mongo": {

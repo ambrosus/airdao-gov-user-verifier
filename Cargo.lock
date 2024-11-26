@@ -123,6 +123,7 @@ dependencies = [
  "ecdsa",
  "ethabi",
  "ethereum-types",
+ "ethers",
  "futures-util",
  "hex",
  "jsonwebtoken 9.3.0",

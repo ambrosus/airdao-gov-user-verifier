@@ -8,6 +8,7 @@ use futures_util::TryStreamExt;
 use mongodb::options::{CountOptions, FindOptions, UpdateOptions};
 use rewards_cache::{RewardsCache, RewardsDelta};
 use serde::Deserialize;
+use std::time::Duration;
 
 use shared::common::{
     BatchId, RewardDbEntry, RewardInfo, RewardStatus, Rewards, RewardsDbEntry, UpdateRewardKind,
@@ -16,7 +17,7 @@ use shared::common::{
 use crate::mongo_client::{MongoClient, MongoConfig};
 use client::RewardsDbClient;
 
-const MAX_GET_REWARDS_LIMIT: u64 = 100;
+const DEFAULT_MAX_GET_REWARDS_LIMIT: u64 = 100;
 const DEFAULT_GET_REWARDS_LIMIT: u64 = 100;
 
 /// Rewards manager's [`RewardsManager`] settings
@@ -26,6 +27,21 @@ pub struct RewardsManagerConfig {
     pub moderators: Vec<Address>,
     /// MongoDB rewards collection name
     pub collection: String,
+    #[serde(
+        deserialize_with = "shared::utils::de_secs_duration",
+        default = "default_max_csv_report_date_range"
+    )]
+    pub max_csv_report_date_range: Duration,
+    #[serde(default = "default_max_get_rewards_limit")]
+    pub max_get_rewards_limit: u64,
+}
+
+pub fn default_max_get_rewards_limit() -> u64 {
+    DEFAULT_MAX_GET_REWARDS_LIMIT
+}
+
+pub fn default_max_csv_report_date_range() -> Duration {
+    Duration::from_secs(16_070_400) // 186 days
 }
 
 /// User profiles manager which provides read/write access to user profile data stored MongoDB
@@ -43,13 +59,13 @@ impl RewardsManager {
     ) -> anyhow::Result<Self> {
         let db_client = RewardsDbClient::new(mongo_config, &config.collection).await?;
 
-        let mut rewards = Vec::with_capacity(MAX_GET_REWARDS_LIMIT as usize);
+        let mut rewards = Vec::with_capacity(config.max_get_rewards_limit as usize);
 
         loop {
             let fetched = Self::load_all_rewards(
                 &db_client,
-                Some(rewards.len() as u64),
-                Some(MAX_GET_REWARDS_LIMIT),
+                rewards.len() as u64,
+                config.max_get_rewards_limit,
             )
             .await?;
 
@@ -145,18 +161,13 @@ impl RewardsManager {
 
     async fn load_all_rewards(
         db_client: &RewardsDbClient,
-        start: Option<u64>,
-        limit: Option<u64>,
+        start: u64,
+        limit: u64,
     ) -> Result<Vec<RewardsDbEntry>, error::Error> {
-        let start = start.unwrap_or_default();
-        let limit = limit
-            .unwrap_or(DEFAULT_GET_REWARDS_LIMIT)
-            .clamp(1, MAX_GET_REWARDS_LIMIT) as i64;
-
         let find_options = FindOptions::builder()
             .max_time(db_client.req_timeout)
             .skip(start)
-            .limit(limit)
+            .limit(limit.max(i64::MAX as u64) as i64)
             .build();
 
         tokio::time::timeout(db_client.req_timeout, async {
@@ -253,7 +264,7 @@ impl RewardsManager {
         let start = start.unwrap_or_default();
         let limit = limit
             .unwrap_or(DEFAULT_GET_REWARDS_LIMIT)
-            .clamp(1, MAX_GET_REWARDS_LIMIT) as i64;
+            .clamp(1, self.config.max_get_rewards_limit) as i64;
 
         if !self
             .config
@@ -379,7 +390,7 @@ impl RewardsManager {
         let start = start.unwrap_or_default();
         let limit = limit
             .unwrap_or(DEFAULT_GET_REWARDS_LIMIT)
-            .clamp(1, MAX_GET_REWARDS_LIMIT) as i64;
+            .clamp(1, self.config.max_get_rewards_limit) as i64;
 
         let requires_moderator_access_rights = wallet != requestor;
 

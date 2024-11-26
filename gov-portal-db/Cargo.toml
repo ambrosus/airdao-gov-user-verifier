@@ -15,6 +15,7 @@ futures-util = { workspace = true }
 async-trait = { workspace = true }
 
 # Ethereum
+ethers = { workspace = true }
 ethabi = { workspace = true }
 ethereum-types = { workspace = true }
 web3 = { workspace = true }

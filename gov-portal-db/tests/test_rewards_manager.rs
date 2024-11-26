@@ -9,7 +9,8 @@ use web3::types::Address;
 
 use airdao_gov_portal_db::{
     mongo_client::MongoConfig,
-    rewards_manager::{error, RewardsManager, RewardsManagerConfig},
+    rewards_manager::{self, error, RewardsManager, RewardsManagerConfig},
+    server::{get_rewards_csv_report, get_rewards_csv_report_by_wallet},
 };
 use shared::common::{BatchId, RewardInfo, RewardStatus, TimestampSeconds, UpdateRewardKind};
 
@@ -26,6 +27,8 @@ async fn test_update_reward() -> Result<(), anyhow::Error> {
         RewardsManagerConfig {
             moderators: vec![],
             collection: "Rewards".to_owned(),
+            max_csv_report_date_range: rewards_manager::default_max_csv_report_date_range(),
+            max_get_rewards_limit: rewards_manager::default_max_get_rewards_limit(),
         },
     )
     .await?;
@@ -111,6 +114,8 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
             RewardsManagerConfig {
                 moderators,
                 collection: "Rewards".to_owned(),
+                max_csv_report_date_range: rewards_manager::default_max_csv_report_date_range(),
+                max_get_rewards_limit: rewards_manager::default_max_get_rewards_limit(),
             },
         )
         .await?,
@@ -317,6 +322,18 @@ async fn test_rewards_endpoint() -> Result<(), anyhow::Error> {
         },]
     );
 
+    assert_matches!(
+        get_rewards_csv_report(
+            rewards_manager.clone(),
+            rewards_manager.config.moderators[0],
+            Some(now),
+            Some(now + rewards_manager.config.max_csv_report_date_range.as_secs()),
+            None
+        )
+        .await,
+        Ok(_)
+    );
+
     rewards_manager.db_client.collection.inner.drop().await?;
 
     Ok(())
@@ -338,6 +355,8 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
             RewardsManagerConfig {
                 moderators: moderators.clone(),
                 collection: "Rewards".to_owned(),
+                max_csv_report_date_range: rewards_manager::default_max_csv_report_date_range(),
+                max_get_rewards_limit: rewards_manager::default_max_get_rewards_limit(),
             },
         )
         .await?,
@@ -591,6 +610,8 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
             RewardsManagerConfig {
                 moderators,
                 collection: "Rewards".to_owned(),
+                max_csv_report_date_range: rewards_manager::default_max_csv_report_date_range(),
+                max_get_rewards_limit: rewards_manager::default_max_get_rewards_limit(),
             },
         )
         .await?,
@@ -648,6 +669,19 @@ async fn test_rewards_by_wallet() -> Result<(), anyhow::Error> {
             )
             .unwrap(),
         U256::from_dec_str("31200000000000").unwrap()
+    );
+
+    assert_matches!(
+        get_rewards_csv_report_by_wallet(
+            rewards_manager.clone(),
+            rewards_manager.config.moderators[0],
+            Address::from_low_u64_le(1),
+            Some(now),
+            Some(now + rewards_manager.config.max_csv_report_date_range.as_secs()),
+            None
+        )
+        .await,
+        Ok(_)
     );
 
     rewards_manager.db_client.collection.inner.drop().await?;
