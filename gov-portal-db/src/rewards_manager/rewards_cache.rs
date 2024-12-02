@@ -141,14 +141,16 @@ impl RewardsCache {
                         }
                         RewardsDelta::Claim(block_number, id, wallet) => {
                             unclaimed_rewards.entry(id).and_modify(|entry| {
-                                entry.remove(&wallet);
-                            });
+                                let Some(claimed_reward) = entry.remove(&wallet) else {
+                                    return;
+                                };
 
-                            if let Some(available_reward) =
-                                available_rewards_by_wallets.get_mut(&wallet)
-                            {
-                                available_reward.sub(available_reward.amount, block_number);
-                            }
+                                if let Some(available_reward) =
+                                    available_rewards_by_wallets.get_mut(&wallet)
+                                {
+                                    available_reward.sub(claimed_reward.amount, block_number);
+                                }
+                            });
                         }
                         RewardsDelta::RevertBatch(block_number, id) => {
                             let Some(rewards_by_wallets) = unclaimed_rewards.remove(&id) else {
