@@ -31,7 +31,7 @@ const REVERT_REWARD_EVENT_SIGNATURE: ethereum_types::H256 =
 pub struct EventListener<T: PubsubClient> {
     provider: Arc<Provider<T>>,
     block_number: u64,
-    sbt_name_by_addr: HashMap<Address, String>,
+    contract_name_by_addr: HashMap<Address, String>,
     contracts: HashMap<String, Address>,
 }
 
@@ -277,7 +277,7 @@ impl<T: PubsubClient> EventListener<T> {
         Ok(Self {
             provider,
             block_number,
-            sbt_name_by_addr: contracts.iter().map(|(k, v)| (*v, k.clone())).collect(),
+            contract_name_by_addr: contracts.iter().map(|(k, v)| (*v, k.clone())).collect(),
             contracts,
         })
     }
@@ -386,7 +386,7 @@ impl<T: PubsubClient> EventListener<T> {
                         let notification = GovEventNotification {
                             event,
                             contract_name: self
-                                .sbt_name_by_addr
+                                .contract_name_by_addr
                                 .get(&meta.address)
                                 .cloned()
                                 .unwrap_or_default(),

@@ -127,7 +127,7 @@ pub struct SBTInfo {
 }
 
 /// All rewards information struct
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Rewards {
     pub id: BatchId,
@@ -135,6 +135,35 @@ pub struct Rewards {
     pub timestamp: TimestampSeconds,
     #[serde(default, skip_serializing_if = "RewardStatus::is_granted")]
     pub status: RewardStatus,
+}
+
+impl From<Rewards> for RewardsDbEntry {
+    fn from(value: Rewards) -> Self {
+        Self {
+            id: value.id,
+            wallets: value
+                .rewards_by_wallet
+                .into_iter()
+                .map(|(wallet, info)| (wallet, RewardDbEntry::from(info)))
+                .collect(),
+            status: value.status,
+        }
+    }
+}
+
+impl From<RewardInfo> for RewardDbEntry {
+    fn from(value: RewardInfo) -> Self {
+        Self {
+            grantor: value.grantor,
+            amount: value.amount,
+            timestamp: value.timestamp,
+            event_name: value.event_name,
+            region: value.region,
+            community: value.community,
+            pseudo: value.pseudo,
+            status: value.status,
+        }
+    }
 }
 
 /// User's reward information struct

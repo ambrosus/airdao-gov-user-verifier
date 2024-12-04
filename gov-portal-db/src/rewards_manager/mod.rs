@@ -76,7 +76,7 @@ impl RewardsManager {
             rewards.extend(fetched);
         }
 
-        let rewards_cache = RewardsCache::init(rewards)?;
+        let rewards_cache = RewardsCache::try_spawn(rewards)?;
 
         Ok(Self {
             db_client,
