@@ -44,16 +44,16 @@ def fetch_rewards(token):
         # Process the data entries
         for entry in data.get("data", []):
             rewards_by_wallet = entry.get("rewardsByWallet", {})
+            batch_status = entry.get("status")
 
             for wallet_data in rewards_by_wallet.values():
-                # Check for status at the top-level entry if applicable
-                if "status" in entry:
-                    continue
+                reward_status = wallet_data.get("status")
+                reward_amount = hex_to_int(wallet_data["amount"])
 
-                status = wallet_data.get("status")
-
-                if status == "claimed" or status is None:
-                    total_rewards += hex_to_int(wallet_data["amount"])
+                if reward_status == "claimed" or (reward_status is None and batch_status is None):
+                    total_rewards += reward_amount
+                else:
+                    print(f"ignore reward (id: {entry.get("id")}, wallet: {wallet_data.get("wallet")}, amount: {Web3.from_wei(reward_amount, 'ether')}). entry status: {batch_status} reward status: {reward_status}")
 
         # Update start_index for pagination
         start_index += len(data.get("data", []))
